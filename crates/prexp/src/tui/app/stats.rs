@@ -65,14 +65,19 @@ impl App {
         // Memory.
         self.system_stats.memory = prexp_ffi::get_memory_info().ok();
 
-        // Aggregate stats from snapshots.
-        self.system_stats.total_processes = self.snapshots.len();
-        self.system_stats.total_threads = self
-            .snapshots
-            .iter()
-            .map(|s| s.thread_count as i64)
-            .sum();
-        self.system_stats.total_fds = self.snapshots.iter().map(|s| s.resources.len()).sum();
+        // Aggregate stats from visible snapshots only (respects show_all toggle).
+        let visible = self.snapshots.iter().filter(|s| self.show_all || s.accessible);
+        let mut total_processes = 0usize;
+        let mut total_threads = 0i64;
+        let mut total_fds = 0usize;
+        for s in visible {
+            total_processes += 1;
+            total_threads += s.thread_count as i64;
+            total_fds += s.resources.len();
+        }
+        self.system_stats.total_processes = total_processes;
+        self.system_stats.total_threads = total_threads;
+        self.system_stats.total_fds = total_fds;
     }
 
     pub fn toggle_summary(&mut self) {
