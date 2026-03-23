@@ -59,7 +59,9 @@ crates/
 ├── prexp-ffi/                    # FFI crate (macOS)
 │   └── src/
 │       ├── raw.rs                # extern "C", #[repr(C)] structs, Mach API bindings
-│       └── safe.rs               # Safe wrappers, Mach timebase conversion
+│       ├── error.rs              # FfiError, errno helpers, Mach timebase conversion
+│       ├── process.rs            # Process APIs (list_all_pids, get_process_info, list_fds, resolve_fd)
+│       └── system.rs             # System APIs (get_cpu_ticks, get_memory_info)
 ├── prexp-core/                   # Core library
 │   └── src/
 │       ├── models.rs             # ProcessSnapshot, OpenResource, ResourceKind

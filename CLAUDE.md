@@ -94,7 +94,9 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 ## Key Files
 
 - `crates/prexp-ffi/src/raw.rs` — extern "C" bindings, #[repr(C)] structs, Mach API bindings
-- `crates/prexp-ffi/src/safe.rs` — Safe wrappers: `list_all_pids`, `get_process_info`, `list_fds`, `resolve_fd`, `list_pids_by_path`
+- `crates/prexp-ffi/src/error.rs` — FfiError type, errno helpers, Mach timebase conversion
+- `crates/prexp-ffi/src/process.rs` — process-level APIs: `list_all_pids`, `get_process_info`, `list_fds`, `resolve_fd`, `list_pids_by_path`
+- `crates/prexp-ffi/src/system.rs` — system-level APIs: `get_cpu_ticks`, `get_memory_info`
 - `crates/prexp-core/src/models.rs` — `ProcessSnapshot`, `OpenResource`, `ResourceKind`
 - `crates/prexp-core/src/source.rs` — `ProcessSource` trait
 - `crates/prexp-core/src/error.rs` — `FdtopError` (thiserror)
