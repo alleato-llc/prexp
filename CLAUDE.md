@@ -44,9 +44,10 @@ cargo run -p prexp -- --help          # CLI usage
 | `q` | Quit (closes overlay first) |
 | `Esc` | Close overlay / clear search |
 | `j/k` / arrows | Navigate |
-| `Enter` | Open detail overlay |
-| `v` | Toggle between process and file views |
+| `Enter` | Open detail overlay (or clear active search) |
 | `/` | Search (filters by name/pid or path) |
+| `n` | Next search match (when search is active) |
+| `v` | Toggle between process and file views |
 | `s` / `S` | Cycle sort field / reverse direction |
 | `t` | Open theme picker |
 | `c` | Open column configuration |

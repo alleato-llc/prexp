@@ -85,9 +85,9 @@ crates/
 | `q` | Quit (closes overlay first) |
 | `Esc` | Close overlay / clear search |
 | `j/k` / arrows | Navigate |
-| `Enter` | Open detail overlay |
+| `Enter` | Open detail overlay (or clear active search) |
 | `v` | Toggle process / file view |
-| `/` | Search |
+| `/` | Search (Enter to confirm, `n` for next match) |
 | `s` / `S` | Cycle sort field / reverse direction |
 | `t` | Open theme picker (live preview) |
 | `c` | Configure visible columns |

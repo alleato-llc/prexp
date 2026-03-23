@@ -194,6 +194,13 @@ fn draw_process_list(frame: &mut Frame, app: &App, area: Rect) {
 
     let title = if app.input_mode == InputMode::Search {
         format!(" Processes [/{}] ", app.search_text)
+    } else if app.search_active {
+        format!(
+            " Processes [/{}] — {} matches{} ",
+            app.search_text,
+            app.filtered_indices.len(),
+            sort_label
+        )
     } else {
         format!(
             " prexp — {} processes{} ",
@@ -359,6 +366,13 @@ fn draw_file_list(frame: &mut Frame, app: &App, area: Rect) {
 
     let title = if app.input_mode == InputMode::Search {
         format!(" Files [/{}] ", app.search_text)
+    } else if app.search_active {
+        format!(
+            " Files [/{}] — {} matches{} ",
+            app.search_text,
+            app.filtered_file_indices.len(),
+            sort_label
+        )
     } else {
         format!(
             " prexp — {} open files{} ",
@@ -593,14 +607,20 @@ fn draw_help(frame: &mut Frame, app: &App) {
         "  NAVIGATION",
         "  ----------",
         "  j / k / Up / Down   Navigate list",
-        "  Enter               Open detail overlay",
+        "  Enter               Open detail (or clear search)",
         "  q                   Quit (closes overlay first)",
         "  Esc                 Close overlay / clear search",
+        "",
+        "  SEARCH",
+        "  ------",
+        "  /                   Start search",
+        "  Enter               Confirm search (keep filter)",
+        "  n                   Jump to next match",
+        "  Enter / Esc         Clear search",
         "",
         "  VIEWS",
         "  -----",
         "  v                   Toggle process / file view",
-        "  /                   Search (name/pid or path)",
         "  r                   Reverse lookup by file path",
         "  a                   Toggle show-all processes",
         "  R                   Force refresh",
@@ -642,6 +662,7 @@ fn draw_help(frame: &mut Frame, app: &App) {
         .map(|&line| {
             if line.starts_with("  ---")
                 || line.starts_with("  NAV")
+                || line.starts_with("  SEA")
                 || line.starts_with("  VIEW")
                 || line.starts_with("  DET")
                 || line.starts_with("  SORT")
@@ -795,6 +816,15 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     Span::raw(" Scroll  "),
                     Span::styled("y", key_style),
                     Span::raw(" Copy path"),
+                ])
+            } else if app.search_active {
+                Line::from(vec![
+                    Span::styled(" n", key_style),
+                    Span::raw(" Next  "),
+                    Span::styled("Enter", key_style),
+                    Span::raw(" Clear search  "),
+                    Span::styled("Esc", key_style),
+                    Span::raw(" Clear search"),
                 ])
             } else {
                 let mut spans = vec![

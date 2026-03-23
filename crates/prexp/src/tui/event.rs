@@ -39,11 +39,8 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Esc => {
-            // Clear search/status but don't quit — Esc can be misread
-            // from rapid arrow key presses (escape sequence splitting).
-            app.search_text.clear();
+            app.clear_search();
             app.reverse_results.clear();
-            app.apply_filter();
             app.status_message = None;
         }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -51,7 +48,14 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
         }
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-        KeyCode::Enter => app.open_detail(),
+        KeyCode::Enter => {
+            if app.search_active {
+                app.clear_search();
+            } else {
+                app.open_detail();
+            }
+        }
+        KeyCode::Char('n') => app.next_search_match(),
         KeyCode::Char('/') => app.enter_search_mode(),
         KeyCode::Char('v') => app.toggle_view(),
         KeyCode::Char('c') => app.open_config(),
@@ -134,11 +138,10 @@ fn handle_theme_key(app: &mut App, key: KeyEvent) {
 fn handle_search_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Esc => {
-            app.search_text.clear();
-            app.apply_filter();
+            app.clear_search();
             app.exit_input_mode();
         }
-        KeyCode::Enter => app.exit_input_mode(),
+        KeyCode::Enter => app.confirm_search(),
         KeyCode::Backspace => app.pop_input_char(),
         KeyCode::Char(c) => app.push_input_char(c),
         _ => {}

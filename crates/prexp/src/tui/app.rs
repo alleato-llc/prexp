@@ -198,6 +198,7 @@ pub struct App {
     pub detail_open: bool,
     pub input_mode: InputMode,
     pub search_text: String,
+    pub search_active: bool,
     pub reverse_lookup_text: String,
     pub reverse_results: Vec<ProcessSnapshot>,
     pub should_quit: bool,
@@ -261,6 +262,7 @@ impl App {
             detail_open: false,
             input_mode: InputMode::Normal,
             search_text: String::new(),
+            search_active: false,
             reverse_lookup_text: String::new(),
             reverse_results: Vec::new(),
             should_quit: false,
@@ -783,6 +785,43 @@ impl App {
     pub fn enter_search_mode(&mut self) {
         self.input_mode = InputMode::Search;
         self.search_text.clear();
+        self.search_active = false;
+    }
+
+    /// Confirm search: exit typing mode but keep filter active.
+    pub fn confirm_search(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.search_active = !self.search_text.is_empty();
+    }
+
+    /// Clear search and return to unfiltered view.
+    pub fn clear_search(&mut self) {
+        self.search_text.clear();
+        self.search_active = false;
+        self.apply_filter();
+    }
+
+    /// Jump to the next match in the filtered list.
+    pub fn next_search_match(&mut self) {
+        if !self.search_active {
+            return;
+        }
+        match self.main_view {
+            MainView::Processes => {
+                if !self.filtered_indices.is_empty() {
+                    self.selected_index =
+                        (self.selected_index + 1) % self.filtered_indices.len();
+                    self.update_process_anchor();
+                }
+            }
+            MainView::Files => {
+                if !self.filtered_file_indices.is_empty() {
+                    self.file_selected_index =
+                        (self.file_selected_index + 1) % self.filtered_file_indices.len();
+                    self.update_file_anchor();
+                }
+            }
+        }
     }
 
     pub fn enter_reverse_lookup_mode(&mut self) {
