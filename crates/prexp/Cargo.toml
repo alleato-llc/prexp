@@ -1,0 +1,23 @@
+[package]
+name = "prexp"
+version = "0.1.0"
+edition = "2021"
+description = "Process explorer — TUI for inspecting open file descriptors per process"
+
+[[bin]]
+name = "prexp"
+path = "src/main.rs"
+
+[lib]
+name = "prexp_app"
+path = "src/lib.rs"
+
+[dependencies]
+prexp-core = { path = "../prexp-core" }
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+anyhow = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+prexp-ffi = { path = "../prexp-ffi" }
