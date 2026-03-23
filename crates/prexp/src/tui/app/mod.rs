@@ -1,20 +1,25 @@
+mod search;
+pub mod stats;
+mod tree;
+
 use std::collections::HashMap;
-use std::io::Write;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
-use prexp_core::error::FdtopError;
 use prexp_core::models::ProcessSnapshot;
 use prexp_core::source::ProcessSource;
+
+// Re-export format_memory for use by ui module.
+pub use stats::format_memory;
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 /// An entry in the tree-ordered display list.
 #[derive(Debug, Clone)]
 pub struct TreeEntry {
-    /// Index into App::snapshots.
     pub snapshot_index: usize,
-    /// Depth in the process tree (0 = root).
     pub depth: usize,
-    /// Tree prefix string for display (e.g., "├── ", "└── ").
     pub prefix: String,
 }
 
@@ -95,15 +100,8 @@ pub enum Column {
 
 impl Column {
     pub const ALL: &'static [Column] = &[
-        Column::Cpu,
-        Column::Mem,
-        Column::Pmem,
-        Column::Thr,
-        Column::Files,
-        Column::Socks,
-        Column::Pipes,
-        Column::Other,
-        Column::Total,
+        Column::Cpu, Column::Mem, Column::Pmem, Column::Thr,
+        Column::Files, Column::Socks, Column::Pipes, Column::Other, Column::Total,
     ];
 
     pub fn label(self) -> &'static str {
@@ -166,20 +164,23 @@ pub struct SystemStats {
     pub total_fds: usize,
 }
 
-/// Application state for the TUI.
+// ---------------------------------------------------------------------------
+// App state
+// ---------------------------------------------------------------------------
+
 pub struct App {
     pub snapshots: Vec<ProcessSnapshot>,
 
     // CPU% tracking
-    prev_cpu_times: HashMap<i32, u64>,
-    prev_refresh: Option<Instant>,
+    pub(crate) prev_cpu_times: HashMap<i32, u64>,
+    pub(crate) prev_refresh: Option<Instant>,
     pub cpu_percentages: HashMap<i32, f64>,
     pub num_cpus: usize,
 
     // System summary
     pub show_summary: bool,
     pub system_stats: SystemStats,
-    prev_cpu_ticks: Vec<prexp_ffi::CpuTicks>,
+    pub(crate) prev_cpu_ticks: Vec<prexp_ffi::CpuTicks>,
 
     // Process view state
     pub filtered_indices: Vec<usize>,
@@ -286,6 +287,8 @@ impl App {
         }
     }
 
+    // -- Refresh --
+
     pub fn refresh(&mut self, source: &dyn ProcessSource) {
         match source.snapshot_all() {
             Ok(snapshots) => {
@@ -304,90 +307,12 @@ impl App {
         }
     }
 
-    fn refresh_system_stats(&mut self) {
-        // Per-core CPU usage (delta-based).
-        if let Ok(new_ticks) = prexp_ffi::get_cpu_ticks() {
-            if self.prev_cpu_ticks.len() == new_ticks.len() {
-                self.system_stats.cpu_usage = new_ticks
-                    .iter()
-                    .zip(self.prev_cpu_ticks.iter())
-                    .map(|(cur, prev)| {
-                        let user = cur.user.wrapping_sub(prev.user) as f64;
-                        let system = cur.system.wrapping_sub(prev.system) as f64;
-                        let idle = cur.idle.wrapping_sub(prev.idle) as f64;
-                        let nice = cur.nice.wrapping_sub(prev.nice) as f64;
-                        let total = user + system + idle + nice;
-                        if total > 0.0 {
-                            ((user + system + nice) / total) * 100.0
-                        } else {
-                            0.0
-                        }
-                    })
-                    .collect();
-            }
-            self.prev_cpu_ticks = new_ticks;
-        }
-
-        // Memory.
-        self.system_stats.memory = prexp_ffi::get_memory_info().ok();
-
-        // Aggregate stats from snapshots.
-        self.system_stats.total_processes = self.snapshots.len();
-        self.system_stats.total_threads = self
-            .snapshots
-            .iter()
-            .map(|s| s.thread_count as i64)
-            .sum();
-        self.system_stats.total_fds = self.snapshots.iter().map(|s| s.resources.len()).sum();
-    }
-
-    pub fn toggle_summary(&mut self) {
-        self.show_summary = !self.show_summary;
-        if self.show_summary {
-            self.refresh_system_stats();
-        }
-    }
-
-    fn compute_cpu_percentages(&mut self, new_snapshots: &[ProcessSnapshot]) {
-        if !self.column_config.is_enabled(Column::Cpu) {
-            self.cpu_percentages.clear();
-            self.prev_cpu_times.clear();
-            self.prev_refresh = None;
-            return;
-        }
-
-        let now = Instant::now();
-        let elapsed_ns = self
-            .prev_refresh
-            .map(|prev| now.duration_since(prev).as_nanos() as f64)
-            .unwrap_or(0.0);
-
-        self.cpu_percentages.clear();
-
-        if elapsed_ns > 0.0 {
-            for snap in new_snapshots {
-                if let Some(&prev_cpu) = self.prev_cpu_times.get(&snap.pid) {
-                    let delta_cpu = snap.cpu_time_ns.saturating_sub(prev_cpu) as f64;
-                    let pct = (delta_cpu / elapsed_ns) * 100.0;
-                    self.cpu_percentages.insert(snap.pid, pct);
-                }
-                // No previous data → 0% (implicit, not in the map)
-            }
-        }
-
-        // Store current CPU times for next refresh.
-        self.prev_cpu_times.clear();
-        for snap in new_snapshots {
-            self.prev_cpu_times.insert(snap.pid, snap.cpu_time_ns);
-        }
-        self.prev_refresh = Some(now);
-    }
-
     pub fn needs_refresh(&self) -> bool {
         self.last_refresh.elapsed() >= self.refresh_interval
     }
 
-    /// Rebuild both process tree and file list, then restore anchors.
+    // -- Rebuild --
+
     fn rebuild_all(&mut self) {
         self.rebuild_process_list();
         self.rebuild_file_list();
@@ -403,7 +328,6 @@ impl App {
             .collect();
 
         if !self.search_text.is_empty() && self.main_view == MainView::Processes {
-            // Search mode: flat filtered list.
             let query = self.search_text.to_lowercase();
             self.filtered_indices = visible
                 .into_iter()
@@ -414,16 +338,15 @@ impl App {
                 })
                 .collect();
         } else {
-            // Tree with sorted roots. Children stay under their parent.
             let visible_snapshots: Vec<ProcessSnapshot> =
                 visible.iter().map(|&i| self.snapshots[i].clone()).collect();
-            let tree = build_process_tree_sorted(
+            let tree_entries = tree::build_process_tree_sorted(
                 &visible_snapshots,
                 self.process_sort,
                 self.process_sort_dir,
             );
 
-            self.tree_entries = tree
+            self.tree_entries = tree_entries
                 .into_iter()
                 .map(|mut e| {
                     e.snapshot_index = visible[e.snapshot_index];
@@ -497,7 +420,6 @@ impl App {
     }
 
     fn rebuild_file_list(&mut self) {
-        // Build deduplicated path -> openers map from visible snapshots.
         let mut path_map: HashMap<String, Vec<FileOpener>> = HashMap::new();
 
         for snap in &self.snapshots {
@@ -523,7 +445,6 @@ impl App {
             .map(|(path, openers)| FileEntry { path, openers })
             .collect();
 
-        // Apply sort.
         let dir = self.file_sort_dir;
         match self.file_sort {
             FileSortField::ProcessCount => {
@@ -549,7 +470,6 @@ impl App {
         }
         self.file_entries = entries;
 
-        // Apply search filter if in file view.
         if !self.search_text.is_empty() && self.main_view == MainView::Files {
             let query = self.search_text.to_lowercase();
             self.filtered_file_indices = self
@@ -563,7 +483,6 @@ impl App {
             self.filtered_file_indices = (0..self.file_entries.len()).collect();
         }
 
-        // Restore anchor.
         if let Some(ref anchor_path) = self.file_anchor {
             if let Some(pos) = self
                 .filtered_file_indices
@@ -585,7 +504,7 @@ impl App {
         self.update_file_anchor();
     }
 
-    fn update_process_anchor(&mut self) {
+    pub(crate) fn update_process_anchor(&mut self) {
         self.process_anchor = self.selected_snapshot().map(|s| s.pid);
     }
 
@@ -593,12 +512,16 @@ impl App {
         self.file_anchor = self.selected_file_entry().map(|e| e.path.clone());
     }
 
+    // -- Show all --
+
     pub fn toggle_show_all(&mut self) {
         self.show_all = !self.show_all;
         self.rebuild_all();
         let mode = if self.show_all { "on" } else { "off" };
         self.status_message = Some(format!("Show all: {}", mode));
     }
+
+    // -- Sorting --
 
     pub fn cycle_sort(&mut self) {
         match self.main_view {
@@ -653,23 +576,20 @@ impl App {
                 ProcessSortField::Total => format!("Sort: total {}", self.process_sort_dir.arrow()),
             },
             MainView::Files => match self.file_sort {
-                FileSortField::ProcessCount => {
-                    format!("Sort: procs {}", self.file_sort_dir.arrow())
-                }
-                FileSortField::Filename => {
-                    format!("Sort: filename {}", self.file_sort_dir.arrow())
-                }
+                FileSortField::ProcessCount => format!("Sort: procs {}", self.file_sort_dir.arrow()),
+                FileSortField::Filename => format!("Sort: filename {}", self.file_sort_dir.arrow()),
             },
         }
     }
 
-    /// Apply search filter (called on each keystroke in search mode).
     pub fn apply_filter(&mut self) {
         match self.main_view {
             MainView::Processes => self.rebuild_process_list(),
             MainView::Files => self.rebuild_file_list(),
         }
     }
+
+    // -- Selection --
 
     pub fn selected_snapshot(&self) -> Option<&ProcessSnapshot> {
         self.filtered_indices
@@ -689,8 +609,11 @@ impl App {
             MainView::Files => MainView::Processes,
         };
         self.search_text.clear();
+        self.search_active = false;
         self.status_message = None;
     }
+
+    // -- Navigation --
 
     pub fn move_up(&mut self) {
         if self.detail_open {
@@ -752,6 +675,8 @@ impl App {
         }
     }
 
+    // -- Detail overlay --
+
     pub fn scroll_left(&mut self) {
         if self.detail_open && self.detail_h_scroll > 0 {
             self.detail_h_scroll = self.detail_h_scroll.saturating_sub(4);
@@ -782,105 +707,7 @@ impl App {
         self.detail_h_scroll = 0;
     }
 
-    pub fn enter_search_mode(&mut self) {
-        self.input_mode = InputMode::Search;
-        self.search_text.clear();
-        self.search_active = false;
-    }
-
-    /// Confirm search: exit typing mode but keep filter active.
-    pub fn confirm_search(&mut self) {
-        self.input_mode = InputMode::Normal;
-        self.search_active = !self.search_text.is_empty();
-    }
-
-    /// Clear search and return to unfiltered view.
-    pub fn clear_search(&mut self) {
-        self.search_text.clear();
-        self.search_active = false;
-        self.apply_filter();
-    }
-
-    /// Jump to the next match in the filtered list.
-    pub fn next_search_match(&mut self) {
-        if !self.search_active {
-            return;
-        }
-        match self.main_view {
-            MainView::Processes => {
-                if !self.filtered_indices.is_empty() {
-                    self.selected_index =
-                        (self.selected_index + 1) % self.filtered_indices.len();
-                    self.update_process_anchor();
-                }
-            }
-            MainView::Files => {
-                if !self.filtered_file_indices.is_empty() {
-                    self.file_selected_index =
-                        (self.file_selected_index + 1) % self.filtered_file_indices.len();
-                    self.update_file_anchor();
-                }
-            }
-        }
-    }
-
-    pub fn enter_reverse_lookup_mode(&mut self) {
-        self.input_mode = InputMode::ReverseLookup;
-        self.reverse_lookup_text.clear();
-        self.reverse_results.clear();
-    }
-
-    pub fn exit_input_mode(&mut self) {
-        self.input_mode = InputMode::Normal;
-    }
-
-    pub fn perform_reverse_lookup(&mut self, source: &dyn ProcessSource) {
-        match source.find_by_path(&self.reverse_lookup_text) {
-            Ok(results) => {
-                let count = results.len();
-                self.reverse_results = results;
-                self.status_message = Some(format!(
-                    "{} process(es) have '{}' open",
-                    count, self.reverse_lookup_text
-                ));
-            }
-            Err(FdtopError::ProcessNotFound { .. }) => {
-                self.reverse_results.clear();
-                self.status_message = Some("No processes found".into());
-            }
-            Err(e) => {
-                self.reverse_results.clear();
-                self.status_message = Some(format!("Lookup failed: {}", e));
-            }
-        }
-        self.input_mode = InputMode::Normal;
-    }
-
-    pub fn push_input_char(&mut self, c: char) {
-        match self.input_mode {
-            InputMode::Search => {
-                self.search_text.push(c);
-                self.apply_filter();
-            }
-            InputMode::ReverseLookup => {
-                self.reverse_lookup_text.push(c);
-            }
-            InputMode::Normal => {}
-        }
-    }
-
-    pub fn pop_input_char(&mut self) {
-        match self.input_mode {
-            InputMode::Search => {
-                self.search_text.pop();
-                self.apply_filter();
-            }
-            InputMode::ReverseLookup => {
-                self.reverse_lookup_text.pop();
-            }
-            InputMode::Normal => {}
-        }
-    }
+    // -- Theme picker --
 
     pub fn open_theme_picker(&mut self) {
         self.theme_open = true;
@@ -909,6 +736,8 @@ impl App {
         &super::theme::THEMES[self.theme_index]
     }
 
+    // -- Help --
+
     pub fn open_help(&mut self) {
         self.help_open = true;
         self.help_scroll = 0;
@@ -927,6 +756,8 @@ impl App {
     pub fn help_scroll_down(&mut self) {
         self.help_scroll += 1;
     }
+
+    // -- Column config --
 
     pub fn open_config(&mut self) {
         self.config_open = true;
@@ -952,208 +783,8 @@ impl App {
     pub fn config_toggle_selected(&mut self) {
         self.column_config.toggle(self.config_selected);
     }
-
-    /// Copy the selected path to the system clipboard.
-    pub fn yank_selected_path(&self) -> String {
-        let path = if self.detail_open {
-            match self.main_view {
-                MainView::Processes => self
-                    .selected_snapshot()
-                    .and_then(|snap| snap.resources.get(self.detail_selected))
-                    .and_then(|r| r.path.as_deref()),
-                MainView::Files => self
-                    .selected_file_entry()
-                    .map(|e| e.path.as_str()),
-            }
-        } else if self.main_view == MainView::Files {
-            self.selected_file_entry().map(|e| e.path.as_str())
-        } else {
-            None
-        };
-
-        match path {
-            Some(p) => match copy_to_clipboard(p) {
-                Ok(()) => format!("Copied to clipboard: {}", p),
-                Err(e) => format!("Copy failed: {}", e),
-            },
-            None => "No path to copy".into(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Process tree builder
-// ---------------------------------------------------------------------------
-
-/// Build a tree-ordered list, sorting only root processes by the given field.
-/// Children remain grouped under their parent, sorted by PID.
-fn build_process_tree_sorted(
-    snapshots: &[ProcessSnapshot],
-    sort_field: ProcessSortField,
-    sort_dir: SortDirection,
-) -> Vec<TreeEntry> {
-    if snapshots.is_empty() {
-        return Vec::new();
-    }
-
-    let pid_to_idx: HashMap<i32, usize> = snapshots
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.pid, i))
-        .collect();
-
-    let mut children: HashMap<i32, Vec<usize>> = HashMap::new();
-    let mut roots: Vec<usize> = Vec::new();
-
-    for (i, snap) in snapshots.iter().enumerate() {
-        if snap.ppid == 0 || !pid_to_idx.contains_key(&snap.ppid) {
-            roots.push(i);
-        } else {
-            children.entry(snap.ppid).or_default().push(i);
-        }
-    }
-
-    // Sort roots by the requested field; children always by PID.
-    sort_indices_by_field(&mut roots, snapshots, sort_field, sort_dir);
-    for kids in children.values_mut() {
-        kids.sort_by_key(|&i| snapshots[i].pid);
-    }
-
-    let mut result = Vec::with_capacity(snapshots.len());
-    for &root_idx in &roots {
-        walk_tree(snapshots, &children, root_idx, 0, String::new(), true, &mut result);
-    }
-
-    result
-}
-
-fn sort_indices_by_field(
-    indices: &mut [usize],
-    snapshots: &[ProcessSnapshot],
-    field: ProcessSortField,
-    dir: SortDirection,
-) {
-    match field {
-        ProcessSortField::Unsorted => {
-            indices.sort_by_key(|&i| snapshots[i].pid);
-        }
-        _ => {
-            indices.sort_by(|&a, &b| {
-                let sa = &snapshots[a];
-                let sb = &snapshots[b];
-                let cmp = match field {
-                    ProcessSortField::Pid => sa.pid.cmp(&sb.pid),
-                    ProcessSortField::Name => sa.name.to_lowercase().cmp(&sb.name.to_lowercase()),
-                    ProcessSortField::Total => sa.resources.len().cmp(&sb.resources.len()),
-                    ProcessSortField::Unsorted => unreachable!(),
-                };
-                match dir {
-                    SortDirection::Asc => cmp,
-                    SortDirection::Desc => cmp.reverse(),
-                }
-            });
-        }
-    }
-}
-
-fn walk_tree(
-    snapshots: &[ProcessSnapshot],
-    children: &HashMap<i32, Vec<usize>>,
-    idx: usize,
-    depth: usize,
-    parent_prefix: String,
-    is_last: bool,
-    result: &mut Vec<TreeEntry>,
-) {
-    let prefix = if depth == 0 {
-        String::new()
-    } else {
-        let connector = if is_last { "└── " } else { "├── " };
-        format!("{}{}", parent_prefix, connector)
-    };
-
-    result.push(TreeEntry {
-        snapshot_index: idx,
-        depth,
-        prefix: prefix.clone(),
-    });
-
-    let pid = snapshots[idx].pid;
-    if let Some(kids) = children.get(&pid) {
-        let child_prefix = if depth == 0 {
-            String::new()
-        } else {
-            let continuation = if is_last { "    " } else { "│   " };
-            format!("{}{}", parent_prefix, continuation)
-        };
-
-        for (i, &child_idx) in kids.iter().enumerate() {
-            let child_is_last = i == kids.len() - 1;
-            walk_tree(
-                snapshots, children, child_idx, depth + 1, child_prefix.clone(), child_is_last, result,
-            );
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Extract the filename (basename) from a path.
-/// Format bytes as human-readable (e.g., "12.3M", "1.2G").
-pub fn format_memory(bytes: u64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = 1024.0 * 1024.0;
-    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
-
-    let b = bytes as f64;
-    if b >= GB {
-        format!("{:.1}G", b / GB)
-    } else if b >= MB {
-        format!("{:.1}M", b / MB)
-    } else if b >= KB {
-        format!("{:.0}K", b / KB)
-    } else {
-        format!("{}B", bytes)
-    }
 }
 
 fn filename_from_path(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
-}
-
-// ---------------------------------------------------------------------------
-// Clipboard
-// ---------------------------------------------------------------------------
-
-fn copy_to_clipboard(text: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    let mut child = Command::new("pbcopy")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to spawn pbcopy: {}", e))?;
-
-    #[cfg(target_os = "linux")]
-    let mut child = Command::new("xclip")
-        .args(["-selection", "clipboard"])
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("failed to spawn xclip: {}", e))?;
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    return Err("clipboard not supported on this platform".into());
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        if let Some(stdin) = child.stdin.as_mut() {
-            stdin
-                .write_all(text.as_bytes())
-                .map_err(|e| format!("failed to write to clipboard: {}", e))?;
-        }
-        child
-            .wait()
-            .map_err(|e| format!("clipboard command failed: {}", e))?;
-        Ok(())
-    }
 }
