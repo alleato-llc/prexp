@@ -10,17 +10,31 @@ use super::app::{self, App, Column, FileSortField, InputMode, MainView, ProcessS
 use super::theme::Theme;
 
 pub fn draw(frame: &mut Frame, app: &App) {
+    let summary_height = if app.show_summary {
+        summary_lines_for_width(app, frame.area().width.saturating_sub(2)) as u16 + 2
+    } else {
+        0
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(summary_height),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ])
         .split(frame.area());
 
-    match app.main_view {
-        MainView::Processes => draw_process_list(frame, app, chunks[0]),
-        MainView::Files => draw_file_list(frame, app, chunks[0]),
+    if app.show_summary {
+        draw_summary(frame, app, chunks[0]);
     }
 
-    draw_status_bar(frame, app, chunks[1]);
+    match app.main_view {
+        MainView::Processes => draw_process_list(frame, app, chunks[1]),
+        MainView::Files => draw_file_list(frame, app, chunks[1]),
+    }
+
+    draw_status_bar(frame, app, chunks[2]);
 
     if app.help_open {
         draw_help(frame, app);
@@ -34,6 +48,134 @@ pub fn draw(frame: &mut Frame, app: &App) {
             MainView::Files => draw_file_detail(frame, app),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// System summary header
+// ---------------------------------------------------------------------------
+
+/// Calculate CPU layout: (cpus_per_row, bar_width, cpu_rows).
+fn cpu_layout(cpu_count: usize, width: u16) -> (usize, usize, usize) {
+    if cpu_count == 0 {
+        return (1, 8, 1);
+    }
+    let max_rows = 4usize;
+    // Each CPU entry: " XX " (4) + bar + " XXX.X%" (7) = 11 + bar_width
+    let fixed_per_cpu = 11usize;
+    let min_bar = 4usize;
+    let usable = width as usize;
+
+    // Try to fit as many per row as possible, capped so we don't exceed max_rows.
+    let cpus_per_row = ((cpu_count + max_rows - 1) / max_rows).max(1);
+
+    // How wide is the bar given cpus_per_row?
+    let entry_width = if cpus_per_row > 0 {
+        usable / cpus_per_row
+    } else {
+        usable
+    };
+    let bar_width = entry_width.saturating_sub(fixed_per_cpu).max(min_bar);
+
+    let cpu_rows = (cpu_count + cpus_per_row - 1) / cpus_per_row;
+    (cpus_per_row, bar_width, cpu_rows)
+}
+
+/// Calculate how many content lines the summary needs for a given width.
+fn summary_lines_for_width(app: &App, width: u16) -> usize {
+    let cpu_count = app.system_stats.cpu_usage.len();
+    let (_, _, cpu_rows) = cpu_layout(cpu_count, width);
+    cpu_rows + 2 // CPU rows + memory row + stats row
+}
+
+fn draw_summary(frame: &mut Frame, app: &App, area: Rect) {
+    let t = app.current_theme();
+    let stats = &app.system_stats;
+
+    let block = Block::default()
+        .title(" System ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_process));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    if !stats.cpu_usage.is_empty() {
+        let (cpus_per_row, bar_width, _) = cpu_layout(stats.cpu_usage.len(), inner.width);
+        for (chunk_idx, chunk) in stats.cpu_usage.chunks(cpus_per_row).enumerate() {
+            let spans: Vec<Span> = chunk
+                .iter()
+                .enumerate()
+                .flat_map(|(i, &pct)| {
+                    let core_idx = chunk_idx * cpus_per_row + i;
+                    let bar = make_bar(pct, bar_width);
+                    vec![
+                        Span::styled(
+                            format!(" {:>2} ", core_idx),
+                            Style::default().fg(t.muted),
+                        ),
+                        Span::styled(bar, Style::default().fg(t.accent)),
+                        Span::raw(format!(" {:>5.1}%", pct)),
+                    ]
+                })
+                .collect();
+            lines.push(Line::from(spans));
+        }
+    } else {
+        lines.push(Line::from(Span::styled(
+            " CPU: no data (waiting for next refresh)",
+            Style::default().fg(t.muted),
+        )));
+    }
+
+    // Memory.
+    if let Some(mem) = &stats.memory {
+        let pct = if mem.total > 0 {
+            (mem.used as f64 / mem.total as f64) * 100.0
+        } else {
+            0.0
+        };
+        // " MEM " (5) + bar + " XX.XG / XX.XG (XX%)" (~25) = 30 + bar
+        let mem_bar_width = (inner.width as usize).saturating_sub(30).max(8);
+        let bar = make_bar(pct, mem_bar_width);
+        lines.push(Line::from(vec![
+            Span::styled(" MEM ", Style::default().fg(t.muted)),
+            Span::styled(bar, Style::default().fg(t.accent)),
+            Span::raw(format!(
+                " {} / {} ({:.0}%)",
+                format_mem(mem.used),
+                format_mem(mem.total),
+                pct
+            )),
+        ]));
+    }
+
+    // Process/thread/fd totals.
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!(
+                " {} processes   {} threads   {} open fds",
+                stats.total_processes, stats.total_threads, stats.total_fds
+            ),
+            Style::default().fg(t.header),
+        ),
+    ]));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, inner);
+}
+
+/// Render a progress bar using Unicode block characters.
+fn make_bar(pct: f64, width: usize) -> String {
+    let filled = ((pct / 100.0) * width as f64).round() as usize;
+    let filled = filled.min(width);
+    let empty = width - filled;
+    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+}
+
+fn format_mem(bytes: u64) -> String {
+    super::app::format_memory(bytes)
 }
 
 // ---------------------------------------------------------------------------
@@ -479,6 +621,7 @@ fn draw_help(frame: &mut Frame, app: &App) {
         "  -------------",
         "  c                   Configure visible columns",
         "  t                   Choose color theme",
+        "  g                   Toggle system summary",
         "  ?                   Show this help",
         "",
         "",

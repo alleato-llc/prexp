@@ -23,6 +23,7 @@ pub struct MachTimebaseInfo {
 extern "C" {
     pub fn mach_timebase_info(info: *mut MachTimebaseInfo) -> i32;
     pub fn mach_task_self() -> u32;
+    pub fn mach_host_self() -> u32;
     pub fn task_name_for_pid(target_tport: u32, pid: c_int, tn: *mut u32) -> i32;
     pub fn task_info(
         target_task: u32,
@@ -350,4 +351,79 @@ pub struct ProcTaskInfo {
     pub pti_threadnum: i32,
     pub pti_numrunning: i32,
     pub pti_priority: i32,
+}
+
+// ---------------------------------------------------------------------------
+// System stats (host-level APIs)
+// ---------------------------------------------------------------------------
+
+extern "C" {
+    pub fn host_processor_info(
+        host: u32,
+        flavor: i32,
+        out_processor_count: *mut u32,
+        out_processor_info: *mut *mut i32,
+        out_processor_info_cnt: *mut u32,
+    ) -> i32;
+
+    pub fn host_statistics64(
+        host_priv: u32,
+        flavor: i32,
+        host_info_out: *mut c_void,
+        host_info_count: *mut u32,
+    ) -> i32;
+
+    pub fn vm_deallocate(target_task: u32, address: usize, size: usize) -> i32;
+
+    pub fn sysctlbyname(
+        name: *const c_char,
+        oldp: *mut c_void,
+        oldlenp: *mut usize,
+        newp: *const c_void,
+        newlen: usize,
+    ) -> c_int;
+}
+
+/// Flavor for host_processor_info.
+pub const PROCESSOR_CPU_LOAD_INFO: i32 = 2;
+
+/// Flavor for host_statistics64.
+pub const HOST_VM_INFO64: i32 = 4;
+
+/// CPU state indices into cpu_ticks array.
+pub const CPU_STATE_USER: usize = 0;
+pub const CPU_STATE_SYSTEM: usize = 1;
+pub const CPU_STATE_IDLE: usize = 2;
+pub const CPU_STATE_NICE: usize = 3;
+pub const CPU_STATE_MAX: usize = 4;
+
+/// Matches `struct vm_statistics64` (partial — fields we need).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct VmStatistics64 {
+    pub free_count: u32,
+    pub active_count: u32,
+    pub inactive_count: u32,
+    pub wire_count: u32,
+    pub zero_fill_count: u64,
+    pub reactivations: u64,
+    pub pageins: u64,
+    pub pageouts: u64,
+    pub faults: u64,
+    pub cow_faults: u64,
+    pub lookups: u64,
+    pub hits: u64,
+    pub purges: u64,
+    pub purgeable_count: u32,
+    pub speculative_count: u32,
+    pub decompressions: u64,
+    pub compressions: u64,
+    pub swapins: u64,
+    pub swapouts: u64,
+    pub compressor_page_count: u32,
+    pub throttled_count: u32,
+    pub external_page_count: u32,
+    pub internal_page_count: u32,
+    pub total_uncompressed_pages_in_compressor: u64,
+    pub swapped_count: u64,
 }

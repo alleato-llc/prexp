@@ -76,6 +76,7 @@ crates/
 - **Process view** (default) — tree of processes with CPU%, memory (RSS + private), thread count, and fd breakdown
 - **File view** (`v`) — deduplicated list of all open file paths with process count
 - **Detail overlay** (`Enter`) — shows fds for a process, or processes for a file
+- **System summary** (`g`) — per-CPU core usage bars, memory usage bar, process/thread/fd totals
 
 ### Keybindings
 
@@ -92,6 +93,7 @@ crates/
 | `c` | Configure visible columns |
 | `r` | Reverse lookup (process view) |
 | `a` | Toggle show-all (include inaccessible processes) |
+| `g` | Toggle system summary header |
 | `R` | Force refresh |
 | `y` | Copy path to clipboard |
 | `h/l` | Horizontal scroll (detail overlay) |

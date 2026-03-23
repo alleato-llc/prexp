@@ -156,6 +156,16 @@ pub enum InputMode {
     ReverseLookup,
 }
 
+/// System-level statistics for the summary header.
+#[derive(Debug, Clone)]
+pub struct SystemStats {
+    pub cpu_usage: Vec<f64>,
+    pub memory: Option<prexp_ffi::MemoryInfo>,
+    pub total_processes: usize,
+    pub total_threads: i64,
+    pub total_fds: usize,
+}
+
 /// Application state for the TUI.
 pub struct App {
     pub snapshots: Vec<ProcessSnapshot>,
@@ -165,6 +175,11 @@ pub struct App {
     prev_refresh: Option<Instant>,
     pub cpu_percentages: HashMap<i32, f64>,
     pub num_cpus: usize,
+
+    // System summary
+    pub show_summary: bool,
+    pub system_stats: SystemStats,
+    prev_cpu_ticks: Vec<prexp_ffi::CpuTicks>,
 
     // Process view state
     pub filtered_indices: Vec<usize>,
@@ -225,6 +240,15 @@ impl App {
             num_cpus: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1),
+            show_summary: false,
+            system_stats: SystemStats {
+                cpu_usage: Vec::new(),
+                memory: None,
+                total_processes: 0,
+                total_threads: 0,
+                total_fds: 0,
+            },
+            prev_cpu_ticks: Vec::new(),
             filtered_indices: Vec::new(),
             tree_entries: Vec::new(),
             selected_index: 0,
@@ -266,12 +290,59 @@ impl App {
                 self.compute_cpu_percentages(&snapshots);
                 self.snapshots = snapshots;
                 self.rebuild_all();
+                if self.show_summary {
+                    self.refresh_system_stats();
+                }
                 self.last_refresh = Instant::now();
                 self.status_message = None;
             }
             Err(e) => {
                 self.status_message = Some(format!("Refresh failed: {}", e));
             }
+        }
+    }
+
+    fn refresh_system_stats(&mut self) {
+        // Per-core CPU usage (delta-based).
+        if let Ok(new_ticks) = prexp_ffi::get_cpu_ticks() {
+            if self.prev_cpu_ticks.len() == new_ticks.len() {
+                self.system_stats.cpu_usage = new_ticks
+                    .iter()
+                    .zip(self.prev_cpu_ticks.iter())
+                    .map(|(cur, prev)| {
+                        let user = cur.user.wrapping_sub(prev.user) as f64;
+                        let system = cur.system.wrapping_sub(prev.system) as f64;
+                        let idle = cur.idle.wrapping_sub(prev.idle) as f64;
+                        let nice = cur.nice.wrapping_sub(prev.nice) as f64;
+                        let total = user + system + idle + nice;
+                        if total > 0.0 {
+                            ((user + system + nice) / total) * 100.0
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect();
+            }
+            self.prev_cpu_ticks = new_ticks;
+        }
+
+        // Memory.
+        self.system_stats.memory = prexp_ffi::get_memory_info().ok();
+
+        // Aggregate stats from snapshots.
+        self.system_stats.total_processes = self.snapshots.len();
+        self.system_stats.total_threads = self
+            .snapshots
+            .iter()
+            .map(|s| s.thread_count as i64)
+            .sum();
+        self.system_stats.total_fds = self.snapshots.iter().map(|s| s.resources.len()).sum();
+    }
+
+    pub fn toggle_summary(&mut self) {
+        self.show_summary = !self.show_summary;
+        if self.show_summary {
+            self.refresh_system_stats();
         }
     }
 

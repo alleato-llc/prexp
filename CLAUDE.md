@@ -52,6 +52,7 @@ cargo run -p prexp -- --help          # CLI usage
 | `c` | Open column configuration |
 | `r` | Reverse lookup (process view only) |
 | `a` | Toggle show-all (include inaccessible processes) |
+| `g` | Toggle system summary (CPU cores, memory, totals) |
 | `R` | Force refresh |
 | `y` | Copy selected path to clipboard (file view / detail) |
 | `?` | Open help legend |
@@ -102,7 +103,7 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 - `crates/prexp/src/tui/app.rs` — Application state, CPU% computation, sort logic, tree builder, file view, column config
 - `crates/prexp/src/tui/ui.rs` — ratatui rendering (process list, file list, detail overlays, config overlay, status bar)
 - `crates/prexp/src/tui/event.rs` — Keybinding dispatch
-- `crates/prexp/src/tui/theme.rs` — 8 color themes (Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro)
+- `crates/prexp/src/tui/theme.rs` — 9 color themes (Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal Purple)
 
 ## FFI Details (macOS)
 
@@ -118,6 +119,12 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 - `mach_timebase_info` — convert Mach ticks to nanoseconds (cached via OnceLock, handles Apple Silicon ratio 125:3)
 - `task_name_for_pid` — get task port without root
 - `task_info(TASK_VM_INFO)` — physical footprint (private memory, matches Activity Monitor)
+- `host_processor_info(PROCESSOR_CPU_LOAD_INFO)` — per-CPU core tick counts (user/system/idle/nice)
+- `host_statistics64(HOST_VM_INFO64)` — system memory stats (free/active/wired/compressed pages)
+
+### sysctl APIs used
+- `sysctlbyname("hw.memsize")` — total physical memory
+- `sysctlbyname("hw.pagesize")` — page size for VM stats conversion
 
 ## Skills
 

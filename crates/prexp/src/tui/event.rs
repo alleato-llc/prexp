@@ -64,6 +64,7 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
             app.refresh(source);
             app.status_message = Some("Refreshed".into());
         }
+        KeyCode::Char('g') => app.toggle_summary(),
         KeyCode::Char('?') => app.open_help(),
         KeyCode::Char('t') => app.open_theme_picker(),
         KeyCode::Char('s') => app.cycle_sort(),
