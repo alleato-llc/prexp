@@ -2,6 +2,19 @@
 
 Process explorer — a terminal UI for inspecting open file descriptors, CPU usage, and memory per process. Native macOS backend via libproc FFI, no dependency on `lsof`.
 
+```
+┌ Processes [/zed] ───────────────────────────────────────────────────────────────────────────────────┐
+│  PID      NAME                        CPU%   MEM     PMEM    THR  FILES  SOCKS  PIPES  OTHER  TOTAL │
+│▶ 698      zed                         0.1    11.3M   7.8M    1    3      2      0      1      6     │
+│  597      zed                         28.4   1.5G    1.1G    55   251    41     56     22     370   │
+│                                                                                                     │
+│                                                                                                     │
+│                                                                                                     │
+│                                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ / zed█  (Enter to confirm, Esc to cancel)
+ ```
+
 ## Prerequisites
 
 - Rust 1.70+ (stable)
