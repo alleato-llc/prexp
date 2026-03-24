@@ -51,6 +51,7 @@ cargo run -p prexp -- --help          # CLI usage
 | `s` / `S` | Cycle sort field / reverse direction |
 | `t` | Open theme picker |
 | `c` | Open column configuration |
+| `i` | Process info panel (Overview, Resources, Network, Environment) |
 | `r` | Reverse lookup (process view only) |
 | `a` | Toggle show-all (include inaccessible processes) |
 | `g` | Toggle system summary (CPU cores, memory, totals) |
@@ -71,6 +72,13 @@ cargo run -p prexp -- --help          # CLI usage
 |-----|--------|
 | `j/k` / arrows | Navigate and live preview |
 | `Enter` / `q` / `Esc` | Close and apply |
+
+### Info panel (`i`)
+| Key | Action |
+|-----|--------|
+| `1`/`2`/`3`/`4` | Switch tab (Overview, Resources, Network, Environment) |
+| `j/k` / arrows | Scroll within tab |
+| `q` / `Esc` / `i` | Close panel |
 
 ### Column config (`c`)
 | Key | Action |

@@ -6,3 +6,4 @@ description = "Raw FFI bindings and safe wrappers for macOS libproc"
 
 [dependencies]
 thiserror = "2"
+serde = { version = "1", features = ["derive"] }

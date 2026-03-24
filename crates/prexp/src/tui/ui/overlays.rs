@@ -227,6 +227,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         "  -------------",
         "  c                   Configure visible columns",
         "  t                   Choose color theme",
+        "  i                   Process info panel (4 tabs)",
         "  g                   Toggle system summary",
         "  ?                   Show this help",
         "",

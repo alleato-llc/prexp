@@ -87,6 +87,8 @@ extern "C" {
 
     pub fn proc_name(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
 
+    pub fn proc_pidpath(pid: c_int, buffer: *mut c_void, buffersize: u32) -> c_int;
+
     pub fn proc_listpidspath(
         type_: u32,
         typeinfo: u32,
@@ -121,6 +123,37 @@ pub const PROC_PIDTBSDINFO: c_int = 3;
 
 /// Flavor for proc_pidinfo: task info (thread count, memory).
 pub const PROC_PIDTASKINFO: c_int = 4;
+
+/// Flavor for proc_pidinfo: vnode path info (CWD + root dir).
+pub const PROC_PIDVNODEPATHINFO: c_int = 9;
+
+// sysctl constants for environment variables.
+pub const CTL_KERN: c_int = 1;
+pub const KERN_PROCARGS2: c_int = 49;
+
+// TCP state constants.
+pub const TCPS_CLOSED: i32 = 0;
+pub const TCPS_LISTEN: i32 = 1;
+pub const TCPS_SYN_SENT: i32 = 2;
+pub const TCPS_SYN_RECEIVED: i32 = 3;
+pub const TCPS_ESTABLISHED: i32 = 4;
+pub const TCPS_CLOSE_WAIT: i32 = 5;
+pub const TCPS_FIN_WAIT_1: i32 = 6;
+pub const TCPS_CLOSING: i32 = 7;
+pub const TCPS_LAST_ACK: i32 = 8;
+pub const TCPS_FIN_WAIT_2: i32 = 9;
+pub const TCPS_TIME_WAIT: i32 = 10;
+
+// IP version flags for in_sockinfo.
+pub const INI_IPV4: u8 = 0x1;
+pub const INI_IPV6: u8 = 0x2;
+
+// BSD process states (pbi_status).
+pub const SIDL: u32 = 1;
+pub const SRUN: u32 = 2;
+pub const SSLEEP: u32 = 3;
+pub const SSTOP: u32 = 4;
+pub const SZOMB: u32 = 5;
 
 // File descriptor type constants (proc_fdinfo.proc_fdtype).
 pub const PROX_FDTYPE_ATALK: u32 = 0;
@@ -426,4 +459,57 @@ pub struct VmStatistics64 {
     pub internal_page_count: u32,
     pub total_uncompressed_pages_in_compressor: u64,
     pub swapped_count: u64,
+}
+
+/// Matches `struct proc_vnodepathinfo`.
+/// Returned by proc_pidinfo(PROC_PIDVNODEPATHINFO).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ProcVnodePathInfo {
+    pub pvi_cdir: VnodeInfoPath,
+    pub pvi_rdir: VnodeInfoPath,
+}
+
+/// Matches `struct in4in6_addr`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct In4In6Addr {
+    pub i46a_pad32: [u32; 3],
+    pub i46a_addr4: [u8; 4], // struct in_addr = u32, but we read as bytes
+}
+
+/// Matches `struct in_sockinfo` (partial — fields we need for IP:port).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct InSockInfo {
+    pub insi_fport: i32,
+    pub insi_lport: i32,
+    pub insi_gencnt: u64,
+    pub insi_flags: u32,
+    pub insi_flow: u32,
+    pub insi_vflag: u8,
+    pub insi_ip_ttl: u8,
+    pub rfu_1: u16, // padding
+    pub _rfu_pad: u16, // more padding to align to u32
+    pub insi_faddr: In4In6Addr,
+    pub insi_laddr: In4In6Addr,
+}
+
+/// Matches `struct tcp_sockinfo` (partial).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct TcpSockInfo {
+    pub tcpsi_ini: InSockInfo,
+    pub tcpsi_state: i32,
+}
+
+extern "C" {
+    pub fn sysctl(
+        name: *const c_int,
+        namelen: u32,
+        oldp: *mut c_void,
+        oldlenp: *mut usize,
+        newp: *const c_void,
+        newlen: usize,
+    ) -> c_int;
 }

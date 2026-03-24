@@ -3,6 +3,8 @@ use ratatui::style::{Modifier, Style};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::Frame;
 
+use ratatui::style::Color;
+
 use prexp_core::models::ResourceKind;
 
 use crate::tui::app::{self, App, Column, InputMode, ProcessSortField};
@@ -68,6 +70,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
     if cfg.is_enabled(Column::Pipes) { header_cells.push(Cell::from("PIPES")); widths.push(Constraint::Length(6)); }
     if cfg.is_enabled(Column::Other) { header_cells.push(Cell::from("OTHER")); widths.push(Constraint::Length(6)); }
     if cfg.is_enabled(Column::Total) { header_cells.push(Cell::from(total_h)); widths.push(Constraint::Length(6)); }
+    if cfg.is_enabled(Column::State) { header_cells.push(Cell::from("STATE")); widths.push(Constraint::Length(6)); }
 
     let header = Row::new(header_cells)
         .style(Style::default().fg(t.header).add_modifier(Modifier::BOLD))
@@ -78,7 +81,11 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|entry| {
             let snap = &app.snapshots[entry.snapshot_index];
-            let display_name = format!("{}{}", entry.prefix, snap.name);
+            let display_name = if snap.state == prexp_ffi::ProcessState::Zombie {
+                format!("{}{} [Z]", entry.prefix, snap.name)
+            } else {
+                format!("{}{}", entry.prefix, snap.name)
+            };
 
             let row_style = if !snap.accessible {
                 Style::default().fg(t.muted)
@@ -123,6 +130,15 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             }
             if cfg.is_enabled(Column::Total) {
                 cells.push(Cell::from(snap.resources.len().to_string()));
+            }
+            if cfg.is_enabled(Column::State) {
+                let label = snap.state.label();
+                let style = if snap.state == prexp_ffi::ProcessState::Zombie {
+                    Style::default().fg(Color::Red)
+                } else {
+                    row_style
+                };
+                cells.push(Cell::from(label).style(style));
             }
 
             Row::new(cells).style(row_style)

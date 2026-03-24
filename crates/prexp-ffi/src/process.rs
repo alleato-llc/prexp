@@ -38,6 +38,81 @@ pub struct ProcessInfo {
     pub memory_rss: u64,
     pub memory_phys: u64,
     pub cpu_time_ns: u64,
+    pub state: ProcessState,
+    pub start_time: u64,
+}
+
+/// Process state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessState {
+    Running,
+    Sleeping,
+    Stopped,
+    Zombie,
+    Idle,
+    Unknown,
+}
+
+impl ProcessState {
+    pub fn from_bsd_status(status: u32) -> Self {
+        match status {
+            raw::SRUN => ProcessState::Running,
+            raw::SSLEEP => ProcessState::Sleeping,
+            raw::SSTOP => ProcessState::Stopped,
+            raw::SZOMB => ProcessState::Zombie,
+            raw::SIDL => ProcessState::Idle,
+            _ => ProcessState::Unknown,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ProcessState::Running => "RUN",
+            ProcessState::Sleeping => "SLP",
+            ProcessState::Stopped => "STP",
+            ProcessState::Zombie => "ZMB",
+            ProcessState::Idle => "IDL",
+            ProcessState::Unknown => "???",
+        }
+    }
+}
+
+/// A network connection associated with a process.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NetworkConnection {
+    pub proto: String,
+    pub local_addr: String,
+    pub remote_addr: Option<String>,
+    pub state: Option<String>,
+}
+
+/// Detailed process information for the info panel.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProcessDetail {
+    pub pid: i32,
+    pub ppid: i32,
+    pub parent_name: String,
+    pub name: String,
+    pub path: String,
+    pub cwd: String,
+    pub user: String,
+    pub uid: u32,
+    pub state: ProcessState,
+    pub nice: i32,
+    pub started_secs: u64,
+    pub thread_count: i32,
+    pub virtual_size: u64,
+    pub memory_rss: u64,
+    pub memory_phys: u64,
+    pub cpu_time_ns: u64,
+    pub fd_files: usize,
+    pub fd_sockets: usize,
+    pub fd_pipes: usize,
+    pub fd_other: usize,
+    pub fd_total: usize,
+    pub network: Vec<NetworkConnection>,
+    pub environment: Vec<(String, String)>,
 }
 
 /// List all PIDs on the system.
@@ -167,6 +242,8 @@ pub fn get_process_info(pid: i32) -> Result<ProcessInfo, FfiError> {
         memory_rss,
         memory_phys,
         cpu_time_ns,
+        state: ProcessState::from_bsd_status(bsd_info.pbi_status),
+        start_time: bsd_info.pbi_start_tvsec,
     })
 }
 
@@ -215,6 +292,298 @@ pub fn list_pids_by_path(path: &str) -> Result<Vec<i32>, FfiError> {
     buffer.truncate(actual as usize);
     buffer.retain(|&pid| pid > 0);
     Ok(buffer)
+}
+
+/// Get the full path of a process's executable.
+pub fn get_process_path(pid: i32) -> Result<String, FfiError> {
+    let mut buffer = [0u8; raw::MAXPATHLEN];
+    let ret = unsafe {
+        raw::proc_pidpath(pid as c_int, buffer.as_mut_ptr() as *mut c_void, buffer.len() as u32)
+    };
+    if ret <= 0 {
+        return Err(check_errno("proc_pidpath", pid));
+    }
+    let end = buffer.iter().position(|&b| b == 0).unwrap_or(ret as usize);
+    Ok(String::from_utf8_lossy(&buffer[..end]).into_owned())
+}
+
+/// Get the current working directory of a process.
+pub fn get_process_cwd(pid: i32) -> Result<String, FfiError> {
+    let mut info: raw::ProcVnodePathInfo = unsafe { mem::zeroed() };
+    let size = mem::size_of::<raw::ProcVnodePathInfo>() as c_int;
+
+    let ret = unsafe {
+        raw::proc_pidinfo(
+            pid as c_int, raw::PROC_PIDVNODEPATHINFO, 0,
+            &mut info as *mut _ as *mut c_void, size,
+        )
+    };
+    if ret <= 0 {
+        return Err(check_errno("proc_pidinfo(PROC_PIDVNODEPATHINFO)", pid));
+    }
+
+    let end = info.pvi_cdir.vip_path.iter().position(|&b| b == 0).unwrap_or(info.pvi_cdir.vip_path.len());
+    Ok(String::from_utf8_lossy(&info.pvi_cdir.vip_path[..end]).into_owned())
+}
+
+/// Get environment variables of a process via sysctl KERN_PROCARGS2.
+pub fn get_process_env(pid: i32) -> Result<Vec<(String, String)>, FfiError> {
+    let mut mib = [raw::CTL_KERN, raw::KERN_PROCARGS2, pid as c_int];
+    let mut size: usize = 0;
+
+    // First call: get buffer size.
+    let ret = unsafe {
+        raw::sysctl(mib.as_mut_ptr(), 3, std::ptr::null_mut(), &mut size, std::ptr::null(), 0)
+    };
+    if ret != 0 || size == 0 {
+        return Ok(Vec::new()); // permission denied or unavailable
+    }
+
+    let mut buffer = vec![0u8; size];
+    let ret = unsafe {
+        raw::sysctl(mib.as_mut_ptr(), 3, buffer.as_mut_ptr() as *mut c_void, &mut size, std::ptr::null(), 0)
+    };
+    if ret != 0 {
+        return Ok(Vec::new());
+    }
+    buffer.truncate(size);
+
+    // Parse KERN_PROCARGS2 format:
+    // [argc: i32] [exec_path\0] [argv[0]\0 ... argv[argc-1]\0] [env[0]\0 env[1]\0 ... \0]
+    if buffer.len() < 4 {
+        return Ok(Vec::new());
+    }
+
+    let argc = i32::from_ne_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+    let mut pos = 4;
+
+    // Skip exec path.
+    while pos < buffer.len() && buffer[pos] != 0 { pos += 1; }
+    pos += 1; // skip null
+
+    // Skip padding nulls.
+    while pos < buffer.len() && buffer[pos] == 0 { pos += 1; }
+
+    // Skip argv.
+    for _ in 0..argc {
+        while pos < buffer.len() && buffer[pos] != 0 { pos += 1; }
+        pos += 1;
+    }
+
+    // Remaining null-terminated strings are environment variables.
+    let mut env = Vec::new();
+    while pos < buffer.len() {
+        let start = pos;
+        while pos < buffer.len() && buffer[pos] != 0 { pos += 1; }
+        if pos == start { break; } // empty string = end
+
+        if let Ok(s) = std::str::from_utf8(&buffer[start..pos]) {
+            if let Some((key, val)) = s.split_once('=') {
+                env.push((key.to_string(), val.to_string()));
+            }
+        }
+        pos += 1;
+    }
+
+    Ok(env)
+}
+
+/// Resolve network connections for a process by parsing its socket fds.
+pub fn get_network_connections(pid: i32) -> Vec<NetworkConnection> {
+    let fds = match list_fds(pid) {
+        Ok(fds) => fds,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut connections = Vec::new();
+    for fd_info in &fds {
+        if fd_info.fdtype != raw::PROX_FDTYPE_SOCKET {
+            continue;
+        }
+        if let Ok(conn) = resolve_socket_detail(pid, fd_info.fd) {
+            connections.push(conn);
+        }
+    }
+    connections
+}
+
+fn resolve_socket_detail(pid: i32, fd: i32) -> Result<NetworkConnection, FfiError> {
+    let mut info: raw::SocketFdInfo = unsafe { mem::zeroed() };
+    let size = mem::size_of::<raw::SocketFdInfo>() as c_int;
+
+    let ret = unsafe {
+        raw::proc_pidfdinfo(
+            pid as c_int, fd as c_int, raw::PROC_PIDFDSOCKETINFO,
+            &mut info as *mut _ as *mut c_void, size,
+        )
+    };
+    if ret <= 0 {
+        return Err(check_errno("proc_pidfdinfo(SOCKET)", pid));
+    }
+
+    let family = info.psi.soi_family;
+    let sock_type = info.psi.soi_type;
+
+    // Only parse AF_INET (2) and AF_INET6 (30) TCP/UDP sockets.
+    if family != 2 && family != 30 {
+        return Ok(NetworkConnection {
+            proto: format!("sock({})", family),
+            local_addr: "*".into(),
+            remote_addr: None,
+            state: None,
+        });
+    }
+
+    // Read in_sockinfo from the opaque soi_proto union.
+    let in_info: raw::InSockInfo = unsafe {
+        std::ptr::read(info.psi.soi_proto.as_ptr() as *const raw::InSockInfo)
+    };
+
+    let proto = if sock_type == 1 { "tcp" } else { "udp" };
+    let local_addr = format_sock_addr(&in_info.insi_laddr, in_info.insi_lport, in_info.insi_vflag);
+    let remote_addr = format_sock_addr(&in_info.insi_faddr, in_info.insi_fport, in_info.insi_vflag);
+
+    let state = if sock_type == 1 {
+        // TCP — read tcp_sockinfo for state.
+        let tcp_info: raw::TcpSockInfo = unsafe {
+            std::ptr::read(info.psi.soi_proto.as_ptr() as *const raw::TcpSockInfo)
+        };
+        Some(tcp_state_name(tcp_info.tcpsi_state))
+    } else {
+        None
+    };
+
+    let remote = if in_info.insi_fport != 0 {
+        Some(remote_addr)
+    } else {
+        None
+    };
+
+    Ok(NetworkConnection {
+        proto: proto.to_string(),
+        local_addr,
+        remote_addr: remote,
+        state,
+    })
+}
+
+fn format_sock_addr(addr: &raw::In4In6Addr, port: i32, vflag: u8) -> String {
+    let ip = if vflag & raw::INI_IPV4 != 0 {
+        let b = addr.i46a_addr4;
+        if b == [0, 0, 0, 0] {
+            "*".to_string()
+        } else {
+            format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3])
+        }
+    } else {
+        "*".to_string() // IPv6 display simplified for now
+    };
+
+    if port == 0 {
+        format!("{}:*", ip)
+    } else {
+        format!("{}:{}", ip, port)
+    }
+}
+
+fn tcp_state_name(state: i32) -> String {
+    match state {
+        raw::TCPS_CLOSED => "CLOSED",
+        raw::TCPS_LISTEN => "LISTEN",
+        raw::TCPS_SYN_SENT => "SYN_SENT",
+        raw::TCPS_SYN_RECEIVED => "SYN_RCVD",
+        raw::TCPS_ESTABLISHED => "ESTABLISHED",
+        raw::TCPS_CLOSE_WAIT => "CLOSE_WAIT",
+        raw::TCPS_FIN_WAIT_1 => "FIN_WAIT_1",
+        raw::TCPS_CLOSING => "CLOSING",
+        raw::TCPS_LAST_ACK => "LAST_ACK",
+        raw::TCPS_FIN_WAIT_2 => "FIN_WAIT_2",
+        raw::TCPS_TIME_WAIT => "TIME_WAIT",
+        _ => "UNKNOWN",
+    }
+    .to_string()
+}
+
+/// Get username for a UID. Falls back to the numeric UID.
+pub fn get_username(uid: u32) -> String {
+    // Simple approach: try /etc/passwd or just return uid.
+    // On macOS, most users are in Directory Services, not /etc/passwd.
+    // We'll just return the numeric uid for now.
+    format!("uid:{}", uid)
+}
+
+/// Build a full ProcessDetail for the info panel.
+pub fn get_process_detail(pid: i32, parent_name: &str) -> Result<ProcessDetail, FfiError> {
+    // Get BSD info directly for uid, nice, state, etc.
+    let mut bsd_info: raw::ProcBsdInfo = unsafe { mem::zeroed() };
+    let bsd_size = mem::size_of::<raw::ProcBsdInfo>() as c_int;
+    let ret = unsafe {
+        raw::proc_pidinfo(
+            pid as c_int, raw::PROC_PIDTBSDINFO, 0,
+            &mut bsd_info as *mut _ as *mut c_void, bsd_size,
+        )
+    };
+    if ret <= 0 {
+        return Err(check_errno("proc_pidinfo(PROC_PIDTBSDINFO)", pid));
+    }
+
+    let name = extract_c_string(&bsd_info.pbi_name);
+    let name = if name.is_empty() { extract_c_string(&bsd_info.pbi_comm) } else { name };
+
+    let task_info = get_task_info(pid);
+    let (thread_count, memory_rss, cpu_time_ns, virtual_size) = match &task_info {
+        Ok(ti) => {
+            let ns = mach_ticks_to_ns(ti.pti_total_user + ti.pti_total_system);
+            (ti.pti_threadnum, ti.pti_resident_size, ns, ti.pti_virtual_size)
+        }
+        Err(_) => (0, 0, 0, 0),
+    };
+    let memory_phys = get_phys_footprint(pid).unwrap_or(0);
+
+    let path = get_process_path(pid).unwrap_or_default();
+    let cwd = get_process_cwd(pid).unwrap_or_default();
+    let env = get_process_env(pid).unwrap_or_default();
+    let network = get_network_connections(pid);
+
+    let fds = list_fds(pid).unwrap_or_default();
+    let mut fd_files = 0usize;
+    let mut fd_sockets = 0usize;
+    let mut fd_pipes = 0usize;
+    let mut fd_other = 0usize;
+    for fd in &fds {
+        match fd.fdtype {
+            raw::PROX_FDTYPE_VNODE => fd_files += 1,
+            raw::PROX_FDTYPE_SOCKET => fd_sockets += 1,
+            raw::PROX_FDTYPE_PIPE => fd_pipes += 1,
+            _ => fd_other += 1,
+        }
+    }
+
+    Ok(ProcessDetail {
+        pid,
+        ppid: bsd_info.pbi_ppid as i32,
+        parent_name: parent_name.to_string(),
+        name,
+        path,
+        cwd,
+        user: get_username(bsd_info.pbi_uid),
+        uid: bsd_info.pbi_uid,
+        state: ProcessState::from_bsd_status(bsd_info.pbi_status),
+        nice: bsd_info.pbi_nice,
+        started_secs: bsd_info.pbi_start_tvsec,
+        thread_count,
+        virtual_size,
+        memory_rss,
+        memory_phys,
+        cpu_time_ns,
+        fd_files,
+        fd_sockets,
+        fd_pipes,
+        fd_other,
+        fd_total: fds.len(),
+        network,
+        environment: env,
+    })
 }
 
 // ---------------------------------------------------------------------------

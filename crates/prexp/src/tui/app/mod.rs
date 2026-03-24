@@ -3,7 +3,7 @@ mod sorting;
 pub mod stats;
 mod tree;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use prexp_core::models::ProcessSnapshot;
@@ -37,6 +37,33 @@ pub struct FileOpener {
     pub pid: i32,
     pub name: String,
     pub descriptor: i32,
+}
+
+/// Historical CPU/memory data for sparkline charts.
+#[derive(Debug, Clone)]
+pub struct ProcessHistory {
+    pub cpu: VecDeque<f64>,
+    pub memory: VecDeque<u64>,
+}
+
+impl ProcessHistory {
+    const MAX_SAMPLES: usize = 60;
+
+    pub fn new() -> Self {
+        Self {
+            cpu: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            memory: VecDeque::with_capacity(Self::MAX_SAMPLES),
+        }
+    }
+
+    pub fn push(&mut self, cpu_pct: f64, memory_rss: u64) {
+        if self.cpu.len() >= Self::MAX_SAMPLES {
+            self.cpu.pop_front();
+            self.memory.pop_front();
+        }
+        self.cpu.push_back(cpu_pct);
+        self.memory.push_back(memory_rss);
+    }
 }
 
 /// The main view mode (toggled with 'v').
@@ -97,12 +124,14 @@ pub enum Column {
     Pipes,
     Other,
     Total,
+    State,
 }
 
 impl Column {
     pub const ALL: &'static [Column] = &[
         Column::Cpu, Column::Mem, Column::Pmem, Column::Thr,
         Column::Files, Column::Socks, Column::Pipes, Column::Other, Column::Total,
+        Column::State,
     ];
 
     pub fn label(self) -> &'static str {
@@ -116,8 +145,14 @@ impl Column {
             Column::Pipes => "PIPES",
             Column::Other => "OTHER",
             Column::Total => "TOTAL",
+            Column::State => "STATE",
         }
     }
+}
+
+/// Default column config: all enabled except State (off by default).
+fn default_column_enabled() -> Vec<bool> {
+    Column::ALL.iter().map(|c| *c != Column::State).collect()
 }
 
 /// Column visibility configuration. All enabled by default.
@@ -129,7 +164,7 @@ pub struct ColumnConfig {
 impl Default for ColumnConfig {
     fn default() -> Self {
         Self {
-            enabled: vec![true; Column::ALL.len()],
+            enabled: default_column_enabled(),
         }
     }
 }
@@ -228,6 +263,13 @@ pub struct App {
     pub help_open: bool,
     pub help_scroll: usize,
 
+    // Info panel
+    pub info_open: bool,
+    pub info_tab: usize,
+    pub info_scroll: usize,
+    pub info_detail: Option<prexp_ffi::ProcessDetail>,
+    pub process_history: HashMap<i32, ProcessHistory>,
+
     // Detail overlay state
     pub detail_selected: usize,
     pub detail_h_scroll: usize,
@@ -283,6 +325,11 @@ impl App {
             theme_open: false,
             help_open: false,
             help_scroll: 0,
+            info_open: false,
+            info_tab: 0,
+            info_scroll: 0,
+            info_detail: None,
+            process_history: HashMap::new(),
             detail_selected: 0,
             detail_h_scroll: 0,
         }
@@ -294,6 +341,7 @@ impl App {
         match source.snapshot_all() {
             Ok(snapshots) => {
                 self.compute_cpu_percentages(&snapshots);
+                self.update_history(&snapshots);
                 self.snapshots = snapshots;
                 self.rebuild_all();
                 if self.show_summary {
@@ -306,6 +354,19 @@ impl App {
                 self.status_message = Some(format!("Refresh failed: {}", e));
             }
         }
+    }
+
+    fn update_history(&mut self, snapshots: &[ProcessSnapshot]) {
+        for snap in snapshots {
+            let cpu_pct = self.cpu_percentages.get(&snap.pid).copied().unwrap_or(0.0);
+            let history = self.process_history
+                .entry(snap.pid)
+                .or_insert_with(ProcessHistory::new);
+            history.push(cpu_pct, snap.memory_rss);
+        }
+        // Remove history for processes that no longer exist.
+        let pids: std::collections::HashSet<i32> = snapshots.iter().map(|s| s.pid).collect();
+        self.process_history.retain(|pid, _| pids.contains(pid));
     }
 
     pub fn needs_refresh(&self) -> bool {
@@ -650,6 +711,44 @@ impl App {
 
     pub fn current_theme(&self) -> &super::theme::Theme {
         &super::theme::THEMES[self.theme_index]
+    }
+
+    // -- Info panel --
+
+    pub fn open_info(&mut self) {
+        if let Some(snap) = self.selected_snapshot() {
+            let pid = snap.pid;
+            let parent_name = self.snapshots.iter()
+                .find(|s| s.pid == snap.ppid)
+                .map(|s| s.name.as_str())
+                .unwrap_or("?");
+            self.info_detail = prexp_ffi::get_process_detail(pid, parent_name).ok();
+            self.info_open = true;
+            self.info_tab = 0;
+            self.info_scroll = 0;
+        }
+    }
+
+    pub fn close_info(&mut self) {
+        self.info_open = false;
+        self.info_detail = None;
+    }
+
+    pub fn info_set_tab(&mut self, tab: usize) {
+        if tab < 4 {
+            self.info_tab = tab;
+            self.info_scroll = 0;
+        }
+    }
+
+    pub fn info_scroll_up(&mut self) {
+        if self.info_scroll > 0 {
+            self.info_scroll -= 1;
+        }
+    }
+
+    pub fn info_scroll_down(&mut self) {
+        self.info_scroll += 1;
     }
 
     // -- Help --

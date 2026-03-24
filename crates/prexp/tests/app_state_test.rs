@@ -22,7 +22,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "nginx".into(),
             thread_count: 8,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/access.log")),
                 resource(4, ResourceKind::Socket, None),
@@ -33,7 +33,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 100,
             name: "node".into(),
             thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![resource(3, ResourceKind::File, Some("/app/server.js"))],
         },
         ProcessSnapshot {
@@ -41,7 +41,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "redis-server".into(),
             thread_count: 3,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/lib/redis/dump.rdb")),
                 resource(4, ResourceKind::Socket, None),
@@ -673,11 +673,13 @@ fn sort_persists_across_refresh() {
 // -- Column configuration --
 
 #[test]
-fn all_columns_enabled_by_default() {
+fn default_columns_enabled() {
     let (app, _) = create_app_with_data();
-    for col in Column::ALL {
-        assert!(app.column_config.is_enabled(*col));
-    }
+    // All columns enabled by default except State
+    assert!(app.column_config.is_enabled(Column::Cpu));
+    assert!(app.column_config.is_enabled(Column::Mem));
+    assert!(app.column_config.is_enabled(Column::Total));
+    assert!(!app.column_config.is_enabled(Column::State)); // off by default
 }
 
 #[test]

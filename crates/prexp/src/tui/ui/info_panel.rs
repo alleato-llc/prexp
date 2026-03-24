@@ -1,0 +1,297 @@
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::Frame;
+
+use crate::tui::app::{self, App};
+
+use super::detail_rect;
+
+pub fn draw(frame: &mut Frame, app: &App) {
+    let t = app.current_theme();
+    let area = frame.area();
+    let overlay = detail_rect(area);
+    frame.render_widget(Clear, overlay);
+
+    let detail = match &app.info_detail {
+        Some(d) => d,
+        None => return,
+    };
+
+    let tab_labels = ["1 Overview", "2 Resources", "3 Network", "4 Environment"];
+    let tab_bar: Vec<Span> = tab_labels
+        .iter()
+        .enumerate()
+        .flat_map(|(i, label)| {
+            let style = if i == app.info_tab {
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(t.muted)
+            };
+            vec![Span::styled(format!(" [{}] ", label), style)]
+        })
+        .collect();
+
+    let title = format!(" {} (pid {}) ", detail.name, detail.pid);
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_process));
+
+    let inner = block.inner(overlay);
+    frame.render_widget(block, overlay);
+
+    // Tab bar takes first line.
+    let tab_line = Line::from(tab_bar);
+    let tab_area = Rect { height: 1, ..inner };
+    frame.render_widget(Paragraph::new(tab_line), tab_area);
+
+    // Content area below tab bar.
+    let content_area = Rect {
+        y: inner.y + 1,
+        height: inner.height.saturating_sub(1),
+        ..inner
+    };
+
+    let lines = match app.info_tab {
+        0 => overview_lines(detail, t),
+        1 => resources_lines(detail, app, t),
+        2 => network_lines(detail, t),
+        3 => environment_lines(detail, t),
+        _ => Vec::new(),
+    };
+
+    let max_scroll = lines.len().saturating_sub(content_area.height as usize);
+    let scroll = app.info_scroll.min(max_scroll);
+    let visible: Vec<Line> = lines.into_iter().skip(scroll).collect();
+
+    let paragraph = Paragraph::new(visible);
+    frame.render_widget(paragraph, content_area);
+}
+
+fn overview_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+    let nice_label = nice_display(detail.nice);
+    let uptime = format_uptime(detail.started_secs);
+    let started = format_timestamp(detail.started_secs);
+
+    vec![
+        Line::from(""),
+        section_header("IDENTITY", t),
+        Line::from(""),
+        kv("PID", &detail.pid.to_string()),
+        kv("Parent", &format!("{} (pid {})", detail.parent_name, detail.ppid)),
+        kv("Path", &detail.path),
+        kv("CWD", &detail.cwd),
+        kv("User", &format!("{} (uid {})", detail.user, detail.uid)),
+        kv("State", &format!("{}", detail.state.label())),
+        kv_styled("Nice", &nice_label.0, nice_label.1),
+        kv("Started", &format!("{} (uptime {})", started, uptime)),
+    ]
+}
+
+fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        section_header("RESOURCES", t),
+        Line::from(""),
+        kv("Threads", &detail.thread_count.to_string()),
+        kv("Virtual", &app::format_memory(detail.virtual_size)),
+        kv("RSS", &app::format_memory(detail.memory_rss)),
+        kv("PMEM", &app::format_memory(detail.memory_phys)),
+        Line::from(""),
+        kv("Files", &detail.fd_files.to_string()),
+        kv("Sockets", &detail.fd_sockets.to_string()),
+        kv("Pipes", &detail.fd_pipes.to_string()),
+        kv("Other", &detail.fd_other.to_string()),
+        kv("Total FDs", &detail.fd_total.to_string()),
+    ];
+
+    // Sparklines.
+    if let Some(history) = app.process_history.get(&detail.pid) {
+        lines.push(Line::from(""));
+        lines.push(section_header("CPU % (history)", t));
+        let cpu_data: Vec<f64> = history.cpu.iter().copied().collect();
+        lines.push(sparkline_line(&cpu_data, t));
+        if let Some(peak) = history.cpu.iter().cloned().reduce(f64::max) {
+            lines.push(Line::from(Span::styled(
+                format!("  peak: {:.1}%", peak),
+                Style::default().fg(t.muted),
+            )));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(section_header("Memory (history)", t));
+        let mem_pcts: Vec<f64> = if let Some(&max) = history.memory.iter().max() {
+            if max > 0 {
+                history.memory.iter().map(|&m| (m as f64 / max as f64) * 100.0).collect()
+            } else {
+                vec![0.0; history.memory.len()]
+            }
+        } else {
+            Vec::new()
+        };
+        lines.push(sparkline_line(&mem_pcts, t));
+        if let Some(&peak) = history.memory.iter().max() {
+            lines.push(Line::from(Span::styled(
+                format!("  peak: {}", app::format_memory(peak)),
+                Style::default().fg(t.muted),
+            )));
+        }
+    }
+
+    lines
+}
+
+fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        section_header("NETWORK CONNECTIONS", t),
+        Line::from(""),
+    ];
+
+    if detail.network.is_empty() {
+        lines.push(Line::from(Span::styled("  No network connections", Style::default().fg(t.muted))));
+    } else {
+        for conn in &detail.network {
+            let state_str = conn.state.as_deref().unwrap_or("");
+            let remote = conn.remote_addr.as_deref().unwrap_or("");
+            let line = if remote.is_empty() {
+                format!("  {:<5} {:<25} {}", conn.proto, conn.local_addr, state_str)
+            } else {
+                format!("  {:<5} {:<25} → {:<25} {}", conn.proto, conn.local_addr, remote, state_str)
+            };
+            lines.push(Line::from(line));
+        }
+    }
+
+    lines
+}
+
+fn environment_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(""),
+        section_header(&format!("ENVIRONMENT ({} vars)", detail.environment.len()), t),
+        Line::from(""),
+    ];
+
+    if detail.environment.is_empty() {
+        lines.push(Line::from(Span::styled("  No environment variables available", Style::default().fg(t.muted))));
+    } else {
+        for (key, val) in &detail.environment {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {}", key), Style::default().fg(t.header)),
+                Span::raw("="),
+                Span::raw(val.clone()),
+            ]));
+        }
+    }
+
+    lines
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn section_header(text: &str, t: &super::super::theme::Theme) -> Line<'static> {
+    Line::from(Span::styled(
+        format!("  {}", text),
+        Style::default().fg(t.header).add_modifier(Modifier::BOLD),
+    ))
+}
+
+fn kv(key: &str, val: &str) -> Line<'static> {
+    Line::from(format!("  {:<12}{}", key, val))
+}
+
+fn kv_styled(key: &str, val: &str, color: Color) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(format!("  {:<12}", key)),
+        Span::styled(val.to_string(), Style::default().fg(color)),
+    ])
+}
+
+fn nice_display(nice: i32) -> (String, Color) {
+    let (label, color) = match nice {
+        -20..=-11 => ("CRIT", Color::Red),
+        -10..=-1 => ("HIGH", Color::Yellow),
+        0 => ("NORM", Color::White),
+        1..=10 => ("LOW", Color::Cyan),
+        11..=20 => ("IDLE", Color::DarkGray),
+        _ => ("???", Color::White),
+    };
+    (format!("{} {}", nice, label), color)
+}
+
+fn sparkline_line(data: &[f64], t: &super::super::theme::Theme) -> Line<'static> {
+    const BLOCKS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if data.is_empty() {
+        return Line::from(Span::styled("  (no data)", Style::default().fg(t.muted)));
+    }
+    let max = data.iter().cloned().reduce(f64::max).unwrap_or(1.0).max(1.0);
+    let chars: String = data.iter().map(|&v| {
+        let idx = ((v / max) * 7.0).round() as usize;
+        BLOCKS[idx.min(7)]
+    }).collect();
+    Line::from(Span::styled(format!("  {}", chars), Style::default().fg(t.accent)))
+}
+
+fn format_uptime(start_secs: u64) -> String {
+    if start_secs == 0 {
+        return "unknown".into();
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let elapsed = now.saturating_sub(start_secs);
+
+    let days = elapsed / 86400;
+    let hours = (elapsed % 86400) / 3600;
+    let mins = (elapsed % 3600) / 60;
+
+    if days > 0 {
+        format!("{}d {}h {}m", days, hours, mins)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, mins)
+    } else {
+        format!("{}m", mins)
+    }
+}
+
+fn format_timestamp(secs: u64) -> String {
+    if secs == 0 {
+        return "unknown".into();
+    }
+    // Simple UTC timestamp formatting.
+    let s = secs;
+    let days_since_epoch = s / 86400;
+    let time_of_day = s % 86400;
+    let hours = time_of_day / 3600;
+    let mins = (time_of_day % 3600) / 60;
+    let secs_rem = time_of_day % 60;
+
+    // Approximate date (good enough for display).
+    // This is a simplified calculation — not accounting for leap seconds.
+    let mut y = 1970i64;
+    let mut remaining = days_since_epoch as i64;
+    loop {
+        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        if remaining < days_in_year {
+            break;
+        }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let months = [31, if y % 4 == 0 { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut m = 1;
+    for &dm in &months {
+        if remaining < dm { break; }
+        remaining -= dm;
+        m += 1;
+    }
+    let d = remaining + 1;
+
+    format!("{}-{:02}-{:02} {:02}:{:02}:{:02}", y, m, d, hours, mins, secs_rem)
+}

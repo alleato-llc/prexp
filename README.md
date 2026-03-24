@@ -37,6 +37,13 @@ cargo run -p prexp -- --output json              # JSON output
 cargo run -p prexp -- --output tsv               # Tab-separated values
 cargo run -p prexp -- --output json --pid 1234   # Single process
 cargo run -p prexp -- --output json --path /dev/null  # Reverse lookup
+
+# Process info (JSON)
+cargo run -p prexp -- --pid 1234 --info              # All info tabs
+cargo run -p prexp -- --pid 1234 --info overview     # Identity only
+cargo run -p prexp -- --pid 1234 --info resources    # Resources only
+cargo run -p prexp -- --pid 1234 --info network      # Network connections
+cargo run -p prexp -- --pid 1234 --info env          # Environment variables
 ```
 
 ## Architecture
@@ -115,6 +122,7 @@ crates/
 | `s` / `S` | Cycle sort field / reverse direction |
 | `t` | Open theme picker (live preview) |
 | `c` | Configure visible columns |
+| `i` | Process info panel (4 tabs) |
 | `r` | Reverse lookup (process view) |
 | `a` | Toggle show-all (include inaccessible processes) |
 | `g` | Toggle system summary header |

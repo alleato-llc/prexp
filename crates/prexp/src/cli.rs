@@ -15,9 +15,21 @@ pub struct Cli {
     #[arg(short = 'P', long = "path")]
     pub file_path: Option<String>,
 
+    /// Show detailed process info (requires --pid). Optional tab: overview, resources, network, env.
+    #[arg(long)]
+    pub info: Option<Option<InfoTab>>,
+
     /// Refresh interval in seconds (TUI mode only).
     #[arg(short, long, default_value = "2")]
     pub interval: u64,
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum InfoTab {
+    Overview,
+    Resources,
+    Network,
+    Env,
 }
 
 #[derive(Clone, ValueEnum)]

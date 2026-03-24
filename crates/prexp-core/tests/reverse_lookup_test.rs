@@ -19,7 +19,7 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             ppid: 1,
             name: "nginx".into(),
             thread_count: 8,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/nginx/access.log")),
                 resource(4, ResourceKind::File, Some("/var/log/nginx/error.log")),
@@ -31,7 +31,7 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             ppid: 1,
             name: "logrotate".into(),
             thread_count: 1,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/nginx/access.log")),
             ],
@@ -41,7 +41,7 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             ppid: 1,
             name: "redis".into(),
             thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/lib/redis/dump.rdb")),
                 resource(4, ResourceKind::Socket, None),

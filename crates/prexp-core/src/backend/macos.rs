@@ -48,6 +48,7 @@ impl ProcessSource for MacosProcessSource {
             memory_rss: info.memory_rss,
             memory_phys: info.memory_phys,
             cpu_time_ns: info.cpu_time_ns,
+            state: info.state,
             accessible: true,
             resources,
         })
@@ -84,10 +85,10 @@ fn partial_snapshot(pid: i32) -> ProcessSnapshot {
         .unwrap_or_else(|_| format!("pid:{}", pid));
 
     // Try to get ppid from get_process_info — it may succeed even when list_fds fails.
-    let (ppid, thread_count, memory_rss, memory_phys, cpu_time_ns, better_name) =
+    let (ppid, thread_count, memory_rss, memory_phys, cpu_time_ns, state, better_name) =
         prexp_ffi::get_process_info(pid)
-            .map(|info| (info.ppid, info.thread_count, info.memory_rss, info.memory_phys, info.cpu_time_ns, info.name))
-            .unwrap_or((0, 0, 0, 0, 0, name));
+            .map(|info| (info.ppid, info.thread_count, info.memory_rss, info.memory_phys, info.cpu_time_ns, info.state, info.name))
+            .unwrap_or((0, 0, 0, 0, 0, prexp_ffi::ProcessState::Unknown, name));
 
     ProcessSnapshot {
         pid,
@@ -97,6 +98,7 @@ fn partial_snapshot(pid: i32) -> ProcessSnapshot {
         memory_rss,
         memory_phys,
         cpu_time_ns,
+        state,
         accessible: false,
         resources: Vec::new(),
     }

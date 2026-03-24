@@ -1,4 +1,5 @@
 mod file_list;
+mod info_panel;
 mod overlays;
 mod process_list;
 
@@ -37,7 +38,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     draw_status_bar(frame, app, chunks[2]);
 
-    if app.help_open {
+    if app.info_open {
+        info_panel::draw(frame, app);
+    } else if app.help_open {
         overlays::draw_help(frame, app);
     } else if app.theme_open {
         overlays::draw_theme_picker(frame, app);

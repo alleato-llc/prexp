@@ -13,6 +13,8 @@ pub struct ProcessSnapshot {
     pub memory_phys: u64,
     /// Cumulative CPU time (user + system) in nanoseconds.
     pub cpu_time_ns: u64,
+    /// Process state (running, sleeping, zombie, etc.).
+    pub state: prexp_ffi::ProcessState,
     /// Whether we had full access to this process's fds.
     /// False when permission was denied — pid/name are still valid.
     pub accessible: bool,

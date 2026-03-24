@@ -18,7 +18,9 @@ pub fn poll_event(timeout: Duration) -> Option<Event> {
 pub fn handle_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
     match app.input_mode {
         InputMode::Normal => {
-            if app.help_open {
+            if app.info_open {
+                handle_info_key(app, key);
+            } else if app.help_open {
                 handle_help_key(app, key);
             } else if app.theme_open {
                 handle_theme_key(app, key);
@@ -68,6 +70,7 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
             app.refresh(source);
             app.status_message = Some("Refreshed".into());
         }
+        KeyCode::Char('i') => app.open_info(),
         KeyCode::Char('g') => app.toggle_summary(),
         KeyCode::Char('?') => app.open_help(),
         KeyCode::Char('t') => app.open_theme_picker(),
@@ -111,6 +114,19 @@ fn handle_config_key(app: &mut App, key: KeyEvent) {
         KeyCode::Up | KeyCode::Char('k') => app.config_move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.config_move_down(),
         KeyCode::Enter | KeyCode::Char(' ') => app.config_toggle_selected(),
+        _ => {}
+    }
+}
+
+fn handle_info_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('i') => app.close_info(),
+        KeyCode::Char('1') => app.info_set_tab(0),
+        KeyCode::Char('2') => app.info_set_tab(1),
+        KeyCode::Char('3') => app.info_set_tab(2),
+        KeyCode::Char('4') => app.info_set_tab(3),
+        KeyCode::Up | KeyCode::Char('k') => app.info_scroll_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.info_scroll_down(),
         _ => {}
     }
 }
