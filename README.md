@@ -78,8 +78,17 @@ crates/
         ├── main.rs               # Entry point
         ├── cli.rs                # Clap argument parsing
         └── tui/
-            ├── app.rs            # App state, CPU%, sorting, tree, file view, column config
-            ├── ui.rs             # ratatui rendering
+            ├── app/
+            │   ├── mod.rs        # App state, navigation, rebuild, overlays
+            │   ├── sorting.rs    # Sort field cycling, direction
+            │   ├── search.rs     # Search, reverse lookup, clipboard
+            │   ├── stats.rs      # CPU%, system stats, memory formatting
+            │   └── tree.rs       # Process tree builder
+            ├── ui/
+            │   ├── mod.rs        # Draw dispatcher, status bar
+            │   ├── process_list.rs  # Process table
+            │   ├── file_list.rs     # File table + detail
+            │   └── overlays.rs      # Summary, help, theme, config, process detail
             ├── event.rs          # Key binding dispatch
             └── theme.rs          # 9 color themes
 ```

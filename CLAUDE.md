@@ -103,8 +103,15 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 - `crates/prexp-core/src/backend/macos.rs` — `MacosProcessSource` implementation
 - `crates/prexp-core/src/output/` — JSON, TSV formatters
 - `crates/prexp/src/cli.rs` — CLI argument parsing (clap)
-- `crates/prexp/src/tui/app.rs` — Application state, CPU% computation, sort logic, tree builder, file view, column config
-- `crates/prexp/src/tui/ui.rs` — ratatui rendering (process list, file list, detail overlays, config overlay, status bar)
+- `crates/prexp/src/tui/app/mod.rs` — App state, navigation, rebuild logic, overlays
+- `crates/prexp/src/tui/app/sorting.rs` — Sort field cycling, direction, process index sorting
+- `crates/prexp/src/tui/app/search.rs` — Search, reverse lookup, clipboard
+- `crates/prexp/src/tui/app/stats.rs` — CPU%, system stats, memory formatting
+- `crates/prexp/src/tui/app/tree.rs` — Process tree builder
+- `crates/prexp/src/tui/ui/mod.rs` — Draw dispatcher, status bar
+- `crates/prexp/src/tui/ui/process_list.rs` — Process table rendering
+- `crates/prexp/src/tui/ui/file_list.rs` — File table + file detail overlay
+- `crates/prexp/src/tui/ui/overlays.rs` — Summary header, process detail, help, theme picker, column config
 - `crates/prexp/src/tui/event.rs` — Keybinding dispatch
 - `crates/prexp/src/tui/theme.rs` — 9 color themes (Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal Purple)
 
