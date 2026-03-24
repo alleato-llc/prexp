@@ -99,7 +99,7 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 - `crates/prexp-ffi/src/system.rs` — system-level APIs: `get_cpu_ticks`, `get_memory_info`
 - `crates/prexp-core/src/models.rs` — `ProcessSnapshot`, `OpenResource`, `ResourceKind`
 - `crates/prexp-core/src/source.rs` — `ProcessSource` trait
-- `crates/prexp-core/src/error.rs` — `FdtopError` (thiserror)
+- `crates/prexp-core/src/error.rs` — `PrexpError` (thiserror)
 - `crates/prexp-core/src/backend/macos.rs` — `MacosProcessSource` implementation
 - `crates/prexp-core/src/output/` — JSON, TSV formatters
 - `crates/prexp/src/cli.rs` — CLI argument parsing (clap)

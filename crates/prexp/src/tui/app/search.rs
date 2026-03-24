@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::process::Command;
 
-use prexp_core::error::FdtopError;
+use prexp_core::error::PrexpError;
 use prexp_core::source::ProcessSource;
 
 use super::{App, InputMode, MainView};
@@ -66,7 +66,7 @@ impl App {
                     count, self.reverse_lookup_text
                 ));
             }
-            Err(FdtopError::ProcessNotFound { .. }) => {
+            Err(PrexpError::ProcessNotFound { .. }) => {
                 self.reverse_results.clear();
                 self.status_message = Some("No processes found".into());
             }

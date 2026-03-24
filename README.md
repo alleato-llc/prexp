@@ -66,7 +66,7 @@ crates/
 │   └── src/
 │       ├── models.rs             # ProcessSnapshot, OpenResource, ResourceKind
 │       ├── source.rs             # ProcessSource trait
-│       ├── error.rs              # FdtopError (thiserror)
+│       ├── error.rs              # PrexpError (thiserror)
 │       ├── backend/
 │       │   ├── macos.rs          # MacosProcessSource
 │       │   └── linux.rs          # LinuxProcessSource (stub)

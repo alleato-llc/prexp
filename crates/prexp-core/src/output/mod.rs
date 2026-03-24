@@ -3,7 +3,7 @@ pub mod tsv;
 
 use std::io::Write;
 
-use crate::error::FdtopError;
+use crate::error::PrexpError;
 use crate::models::ProcessSnapshot;
 
 /// Supported output formats for non-TUI mode.
@@ -18,7 +18,7 @@ pub fn format_snapshots(
     snapshots: &[ProcessSnapshot],
     format: OutputFormat,
     writer: &mut dyn Write,
-) -> Result<(), FdtopError> {
+) -> Result<(), PrexpError> {
     match format {
         OutputFormat::Json => json::format(snapshots, writer),
         OutputFormat::Tsv => tsv::format(snapshots, writer),

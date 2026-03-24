@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use prexp_core::error::FdtopError;
+use prexp_core::error::PrexpError;
 use prexp_core::models::ProcessSnapshot;
 use prexp_core::source::ProcessSource;
 
@@ -17,20 +17,20 @@ impl FakeProcessSource {
 }
 
 impl ProcessSource for FakeProcessSource {
-    fn snapshot_all(&self) -> Result<Vec<ProcessSnapshot>, FdtopError> {
+    fn snapshot_all(&self) -> Result<Vec<ProcessSnapshot>, PrexpError> {
         Ok(self.snapshots.borrow().clone())
     }
 
-    fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, FdtopError> {
+    fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, PrexpError> {
         self.snapshots
             .borrow()
             .iter()
             .find(|s| s.pid == pid)
             .cloned()
-            .ok_or(FdtopError::ProcessNotFound { pid })
+            .ok_or(PrexpError::ProcessNotFound { pid })
     }
 
-    fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, FdtopError> {
+    fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, PrexpError> {
         Ok(self
             .snapshots
             .borrow()

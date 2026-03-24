@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum FdtopError {
+pub enum PrexpError {
     #[error("process {pid} not found")]
     ProcessNotFound { pid: i32 },
 

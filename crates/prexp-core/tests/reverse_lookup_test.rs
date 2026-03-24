@@ -121,6 +121,6 @@ fn snapshot_pid_returns_error_for_unknown_pid() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        prexp_core::error::FdtopError::ProcessNotFound { pid: 999 }
+        prexp_core::error::PrexpError::ProcessNotFound { pid: 999 }
     ));
 }

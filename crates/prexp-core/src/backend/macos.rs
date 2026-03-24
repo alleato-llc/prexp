@@ -1,6 +1,6 @@
 use prexp_ffi::{FdDetail, FdInfo, FfiError};
 
-use crate::error::FdtopError;
+use crate::error::PrexpError;
 use crate::models::{OpenResource, ProcessSnapshot, ResourceKind};
 use crate::source::ProcessSource;
 
@@ -13,7 +13,7 @@ impl MacosProcessSource {
 }
 
 impl ProcessSource for MacosProcessSource {
-    fn snapshot_all(&self) -> Result<Vec<ProcessSnapshot>, FdtopError> {
+    fn snapshot_all(&self) -> Result<Vec<ProcessSnapshot>, PrexpError> {
         let pids = prexp_ffi::list_all_pids().map_err(ffi_to_prexp)?;
 
         let mut snapshots = Vec::with_capacity(pids.len());
@@ -21,9 +21,9 @@ impl ProcessSource for MacosProcessSource {
             match self.snapshot_pid(pid) {
                 Ok(snap) => snapshots.push(snap),
                 // Process exited between list and query — skip entirely.
-                Err(FdtopError::ProcessNotFound { .. }) => continue,
+                Err(PrexpError::ProcessNotFound { .. }) => continue,
                 // Permission denied or other soft failure — include partial snapshot.
-                Err(FdtopError::PermissionDenied { .. } | FdtopError::Backend(_)) => {
+                Err(PrexpError::PermissionDenied { .. } | PrexpError::Backend(_)) => {
                     snapshots.push(partial_snapshot(pid));
                 }
                 Err(e) => return Err(e),
@@ -33,7 +33,7 @@ impl ProcessSource for MacosProcessSource {
         Ok(snapshots)
     }
 
-    fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, FdtopError> {
+    fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, PrexpError> {
         // Get process metadata (ppid, name, thread count).
         let info = prexp_ffi::get_process_info(pid).map_err(ffi_to_prexp)?;
 
@@ -53,7 +53,7 @@ impl ProcessSource for MacosProcessSource {
         })
     }
 
-    fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, FdtopError> {
+    fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, PrexpError> {
         let pids = prexp_ffi::list_pids_by_path(path).map_err(ffi_to_prexp)?;
 
         let mut snapshots = Vec::new();
@@ -164,10 +164,10 @@ fn classify_fdtype(fdtype: u32) -> ResourceKind {
 }
 
 /// Convert FFI errors to domain errors.
-fn ffi_to_prexp(err: FfiError) -> FdtopError {
+fn ffi_to_prexp(err: FfiError) -> PrexpError {
     match err {
-        FfiError::ProcessGone(pid) => FdtopError::ProcessNotFound { pid },
-        FfiError::PermissionDenied(pid) => FdtopError::PermissionDenied { pid },
-        FfiError::SystemError { reason, .. } => FdtopError::Backend(reason),
+        FfiError::ProcessGone(pid) => PrexpError::ProcessNotFound { pid },
+        FfiError::PermissionDenied(pid) => PrexpError::PermissionDenied { pid },
+        FfiError::SystemError { reason, .. } => PrexpError::Backend(reason),
     }
 }

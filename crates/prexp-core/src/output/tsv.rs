@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use crate::error::FdtopError;
+use crate::error::PrexpError;
 use crate::models::ProcessSnapshot;
 
 /// Write process snapshots as TSV (tab-separated values).
-pub fn format(snapshots: &[ProcessSnapshot], writer: &mut dyn Write) -> Result<(), FdtopError> {
+pub fn format(snapshots: &[ProcessSnapshot], writer: &mut dyn Write) -> Result<(), PrexpError> {
     writeln!(writer, "PID\tPROCESS\tDESCRIPTOR\tKIND\tPATH")?;
 
     for proc in snapshots {
