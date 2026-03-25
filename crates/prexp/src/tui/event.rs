@@ -133,6 +133,10 @@ fn handle_info_key(app: &mut App, key: KeyEvent) {
             let msg = app.yank_info_env();
             app.status_message = Some(msg);
         }
+        KeyCode::Char('Y') => {
+            let msg = app.yank_all_env();
+            app.status_message = Some(msg);
+        }
         _ => {}
     }
 }

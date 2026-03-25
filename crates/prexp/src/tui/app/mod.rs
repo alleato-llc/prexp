@@ -792,6 +792,29 @@ impl App {
         "No environment variable selected".into()
     }
 
+    pub fn yank_all_env(&self) -> String {
+        if self.info_tab != 3 {
+            return "No environment to copy".into();
+        }
+        if let Some(detail) = &self.info_detail {
+            if detail.environment.is_empty() {
+                return "No environment variables".into();
+            }
+            let text: String = detail
+                .environment
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let count = detail.environment.len();
+            return match super::app::search::copy_to_clipboard_pub(&text) {
+                Ok(()) => format!("Copied {} environment variables to clipboard", count),
+                Err(e) => format!("Copy failed: {}", e),
+            };
+        }
+        "No environment variables".into()
+    }
+
     // -- Help --
 
     pub fn open_help(&mut self) {
