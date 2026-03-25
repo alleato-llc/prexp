@@ -794,3 +794,258 @@ fn theme_name_shown_on_close() {
     let msg = app.status_message.as_ref().unwrap();
     assert!(msg.contains(THEMES[1].name));
 }
+
+// -- Process state --
+
+fn sample_with_zombie() -> Vec<ProcessSnapshot> {
+    let mut snaps = sample_snapshots();
+    snaps.push(ProcessSnapshot {
+        pid: 400,
+        ppid: 1,
+        name: "defunct".into(),
+        thread_count: 0,
+        memory_rss: 0,
+        memory_phys: 0,
+        cpu_time_ns: 0,
+        state: prexp_ffi::ProcessState::Zombie,
+        accessible: true,
+        resources: Vec::new(),
+    });
+    snaps
+}
+
+#[test]
+fn zombie_process_state() {
+    let source = FakeProcessSource::new(sample_with_zombie());
+    let mut app = App::new(Duration::from_secs(2));
+    app.refresh(&source);
+
+    let zombie = app.snapshots.iter().find(|s| s.pid == 400).unwrap();
+    assert_eq!(zombie.state, prexp_ffi::ProcessState::Zombie);
+    assert_eq!(zombie.state.label(), "ZMB");
+}
+
+#[test]
+fn state_column_off_by_default() {
+    let (app, _) = create_app_with_data();
+    assert!(!app.column_config.is_enabled(Column::State));
+}
+
+// -- Info panel --
+
+#[test]
+fn info_panel_opens_and_closes() {
+    let (mut app, _) = create_app_with_data();
+    assert!(!app.info_open);
+
+    app.open_info();
+    assert!(app.info_open);
+    assert!(app.info_detail.is_none()); // FakeProcessSource can't call FFI
+    // But the method sets info_open regardless of detail success
+
+    app.close_info();
+    assert!(!app.info_open);
+    assert!(app.info_detail.is_none());
+}
+
+#[test]
+fn info_tab_navigation_with_set() {
+    let (mut app, _) = create_app_with_data();
+    assert_eq!(app.info_tab, 0);
+
+    app.info_set_tab(1);
+    assert_eq!(app.info_tab, 1);
+
+    app.info_set_tab(3);
+    assert_eq!(app.info_tab, 3);
+
+    // Out of bounds ignored
+    app.info_set_tab(5);
+    assert_eq!(app.info_tab, 3);
+}
+
+#[test]
+fn info_tab_cycles_forward() {
+    let (mut app, _) = create_app_with_data();
+    assert_eq!(app.info_tab, 0);
+
+    app.info_next_tab();
+    assert_eq!(app.info_tab, 1);
+
+    app.info_next_tab();
+    assert_eq!(app.info_tab, 2);
+
+    app.info_next_tab();
+    assert_eq!(app.info_tab, 3);
+
+    // Wraps to 0
+    app.info_next_tab();
+    assert_eq!(app.info_tab, 0);
+}
+
+#[test]
+fn info_tab_cycles_backward() {
+    let (mut app, _) = create_app_with_data();
+    assert_eq!(app.info_tab, 0);
+
+    // Wraps to 3
+    app.info_prev_tab();
+    assert_eq!(app.info_tab, 3);
+
+    app.info_prev_tab();
+    assert_eq!(app.info_tab, 2);
+}
+
+#[test]
+fn info_set_tab_resets_scroll() {
+    let (mut app, _) = create_app_with_data();
+    app.info_scroll = 5;
+    app.info_env_selected = 3;
+
+    app.info_set_tab(2);
+    assert_eq!(app.info_scroll, 0);
+    assert_eq!(app.info_env_selected, 0);
+}
+
+#[test]
+fn info_scroll_on_non_env_tab() {
+    let (mut app, _) = create_app_with_data();
+    app.info_set_tab(0); // Overview
+
+    app.info_scroll_down();
+    assert_eq!(app.info_scroll, 1);
+    app.info_scroll_down();
+    assert_eq!(app.info_scroll, 2);
+    app.info_scroll_up();
+    assert_eq!(app.info_scroll, 1);
+    app.info_scroll_up();
+    assert_eq!(app.info_scroll, 0);
+    // Does not underflow
+    app.info_scroll_up();
+    assert_eq!(app.info_scroll, 0);
+}
+
+#[test]
+fn info_env_tab_moves_selection() {
+    let (mut app, _) = create_app_with_data();
+    app.info_set_tab(3); // Environment
+
+    // Without detail, selection stays at 0 (no env to navigate)
+    app.info_scroll_down();
+    assert_eq!(app.info_env_selected, 0); // no detail loaded
+
+    // With a mock detail
+    app.info_detail = Some(prexp_ffi::ProcessDetail {
+        pid: 100,
+        ppid: 1,
+        parent_name: "init".into(),
+        name: "test".into(),
+        path: "/bin/test".into(),
+        cwd: "/".into(),
+        user: "root".into(),
+        uid: 0,
+        state: prexp_ffi::ProcessState::Running,
+        nice: 0,
+        started_secs: 0,
+        thread_count: 1,
+        virtual_size: 0,
+        memory_rss: 0,
+        memory_phys: 0,
+        cpu_time_ns: 0,
+        fd_files: 0,
+        fd_sockets: 0,
+        fd_pipes: 0,
+        fd_other: 0,
+        fd_total: 0,
+        network: Vec::new(),
+        environment: vec![
+            ("HOME".into(), "/root".into()),
+            ("PATH".into(), "/usr/bin".into()),
+            ("SHELL".into(), "/bin/bash".into()),
+        ],
+    });
+
+    app.info_scroll_down();
+    assert_eq!(app.info_env_selected, 1);
+    app.info_scroll_down();
+    assert_eq!(app.info_env_selected, 2);
+    // Does not overflow
+    app.info_scroll_down();
+    assert_eq!(app.info_env_selected, 2);
+    app.info_scroll_up();
+    assert_eq!(app.info_env_selected, 1);
+}
+
+// -- History tracking --
+
+#[test]
+fn history_tracks_cpu_and_memory() {
+    use prexp_app::tui::app::ProcessHistory;
+
+    let mut history = ProcessHistory::new();
+    history.push(10.0, 1000);
+    history.push(20.0, 2000);
+    history.push(30.0, 3000);
+
+    assert_eq!(history.cpu.len(), 3);
+    assert_eq!(history.memory.len(), 3);
+    assert_eq!(*history.cpu.back().unwrap(), 30.0);
+    assert_eq!(*history.memory.back().unwrap(), 3000);
+}
+
+#[test]
+fn history_caps_at_max_samples() {
+    use prexp_app::tui::app::ProcessHistory;
+
+    let mut history = ProcessHistory::new();
+    for i in 0..100 {
+        history.push(i as f64, i * 1000);
+    }
+
+    assert_eq!(history.cpu.len(), 60); // MAX_SAMPLES
+    assert_eq!(history.memory.len(), 60);
+    // Oldest values were dropped
+    assert_eq!(*history.cpu.front().unwrap(), 40.0);
+}
+
+#[test]
+fn history_updated_on_refresh() {
+    let (mut app, source) = create_app_with_data();
+
+    // First refresh populates history
+    app.refresh(&source);
+    assert!(!app.process_history.is_empty());
+
+    // Each process should have a history entry
+    for snap in &app.snapshots {
+        assert!(app.process_history.contains_key(&snap.pid));
+    }
+}
+
+#[test]
+fn history_removes_dead_processes() {
+    let source1 = FakeProcessSource::new(sample_snapshots());
+    let mut app = App::new(Duration::from_secs(2));
+    app.refresh(&source1);
+    assert!(app.process_history.contains_key(&100));
+
+    // Second refresh with fewer processes
+    let source2 = FakeProcessSource::new(vec![ProcessSnapshot {
+        pid: 100,
+        ppid: 1,
+        name: "nginx".into(),
+        thread_count: 8,
+        memory_rss: 1024 * 1024 * 50,
+        memory_phys: 1024 * 1024 * 30,
+        cpu_time_ns: 1_000_000_000,
+        state: prexp_ffi::ProcessState::Running,
+        accessible: true,
+        resources: Vec::new(),
+    }]);
+    app.refresh(&source2);
+
+    // pid 200 and 300 should be removed from history
+    assert!(app.process_history.contains_key(&100));
+    assert!(!app.process_history.contains_key(&200));
+    assert!(!app.process_history.contains_key(&300));
+}

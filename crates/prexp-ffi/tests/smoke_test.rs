@@ -78,4 +78,70 @@ fn get_process_info_returns_ppid_and_threads() {
         info.thread_count
     );
     assert!(!info.name.is_empty(), "should have a name");
+    assert!(
+        info.state == prexp_ffi::ProcessState::Running || info.state == prexp_ffi::ProcessState::Sleeping,
+        "test process should be running or sleeping, got {:?}",
+        info.state
+    );
+    assert!(info.start_time > 0, "should have a start time");
+}
+
+#[test]
+#[ignore]
+fn get_process_path_for_self() {
+    let my_pid = std::process::id() as i32;
+    let path = prexp_ffi::get_process_path(my_pid).expect("failed to get process path");
+    assert!(!path.is_empty(), "path should not be empty");
+    // Should be an absolute path
+    assert!(path.starts_with('/'), "path should be absolute: {}", path);
+}
+
+#[test]
+#[ignore]
+fn get_process_cwd_for_self() {
+    let my_pid = std::process::id() as i32;
+    let cwd = prexp_ffi::get_process_cwd(my_pid).expect("failed to get process cwd");
+    assert!(!cwd.is_empty(), "cwd should not be empty");
+    assert!(cwd.starts_with('/'), "cwd should be absolute: {}", cwd);
+}
+
+#[test]
+#[ignore]
+fn get_process_env_for_self() {
+    let my_pid = std::process::id() as i32;
+    let env = prexp_ffi::get_process_env(my_pid).expect("failed to get process env");
+    // Should have at least PATH and HOME
+    assert!(!env.is_empty(), "should have environment variables");
+    assert!(
+        env.iter().any(|(k, _)| k == "PATH"),
+        "should have PATH env var"
+    );
+}
+
+#[test]
+#[ignore]
+fn get_process_detail_for_self() {
+    let my_pid = std::process::id() as i32;
+    let detail = prexp_ffi::get_process_detail(my_pid, "test_parent")
+        .expect("failed to get process detail");
+
+    assert_eq!(detail.pid, my_pid);
+    assert!(!detail.name.is_empty());
+    assert!(!detail.path.is_empty());
+    assert!(detail.path.starts_with('/'));
+    assert!(!detail.cwd.is_empty());
+    assert!(detail.thread_count >= 1);
+    assert!(detail.fd_total >= 3); // stdin/stdout/stderr
+    assert!(!detail.environment.is_empty());
+    assert_eq!(detail.parent_name, "test_parent");
+}
+
+#[test]
+#[ignore]
+fn get_network_connections_for_self() {
+    let my_pid = std::process::id() as i32;
+    // May or may not have connections, but should not panic
+    let conns = prexp_ffi::get_network_connections(my_pid);
+    // Just verify it returns without error — test process may have no sockets
+    let _ = conns;
 }
