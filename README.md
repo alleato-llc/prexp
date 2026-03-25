@@ -122,7 +122,7 @@ crates/
 | `s` / `S` | Cycle sort field / reverse direction |
 | `t` | Open theme picker (live preview) |
 | `c` | Configure visible columns |
-| `i` | Process info panel (4 tabs) |
+| `i` | Process info panel (Tab/Shift+Tab to switch tabs, y to copy env) |
 | `r` | Reverse lookup (process view) |
 | `a` | Toggle show-all (include inaccessible processes) |
 | `g` | Toggle system summary header |

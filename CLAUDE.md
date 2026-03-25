@@ -76,8 +76,10 @@ cargo run -p prexp -- --help          # CLI usage
 ### Info panel (`i`)
 | Key | Action |
 |-----|--------|
-| `1`/`2`/`3`/`4` | Switch tab (Overview, Resources, Network, Environment) |
-| `j/k` / arrows | Scroll within tab |
+| `Tab` / `Shift+Tab` | Cycle tabs forward / backward |
+| `1`/`2`/`3`/`4` | Jump to tab (Overview, Resources, Network, Environment) |
+| `j/k` / arrows | Scroll within tab (selects row in Environment tab) |
+| `y` | Copy selected environment variable (`KEY=VALUE`) |
 | `q` / `Esc` / `i` | Close panel |
 
 ### Column config (`c`)
