@@ -40,6 +40,12 @@ pub struct ProcessInfo {
     pub cpu_time_ns: u64,
     pub state: ProcessState,
     pub start_time: u64,
+    pub faults: i32,
+    pub context_switches: i32,
+    pub syscalls_mach: i32,
+    pub syscalls_unix: i32,
+    pub disk_bytes_read: u64,
+    pub disk_bytes_written: u64,
 }
 
 /// Process state.
@@ -111,6 +117,12 @@ pub struct ProcessDetail {
     pub fd_pipes: usize,
     pub fd_other: usize,
     pub fd_total: usize,
+    pub faults: i32,
+    pub context_switches: i32,
+    pub syscalls_mach: i32,
+    pub syscalls_unix: i32,
+    pub disk_bytes_read: u64,
+    pub disk_bytes_written: u64,
     pub network: Vec<NetworkConnection>,
     pub environment: Vec<(String, String)>,
 }
@@ -224,16 +236,18 @@ pub fn get_process_info(pid: i32) -> Result<ProcessInfo, FfiError> {
     };
 
     let task_info = get_task_info(pid);
-    let (thread_count, memory_rss, cpu_time_ns) = match task_info {
+    let (thread_count, memory_rss, cpu_time_ns, faults, csw, sys_mach, sys_unix) = match task_info {
         Ok(ti) => {
             let raw_ticks = ti.pti_total_user + ti.pti_total_system;
             let ns = mach_ticks_to_ns(raw_ticks);
-            (ti.pti_threadnum, ti.pti_resident_size, ns)
+            (ti.pti_threadnum, ti.pti_resident_size, ns,
+             ti.pti_faults, ti.pti_csw, ti.pti_syscalls_mach, ti.pti_syscalls_unix)
         }
-        Err(_) => (0, 0, 0),
+        Err(_) => (0, 0, 0, 0, 0, 0, 0),
     };
 
     let memory_phys = get_phys_footprint(pid).unwrap_or(0);
+    let (disk_read, disk_write) = get_disk_io(pid).unwrap_or((0, 0));
 
     Ok(ProcessInfo {
         ppid: bsd_info.pbi_ppid as i32,
@@ -244,6 +258,12 @@ pub fn get_process_info(pid: i32) -> Result<ProcessInfo, FfiError> {
         cpu_time_ns,
         state: ProcessState::from_bsd_status(bsd_info.pbi_status),
         start_time: bsd_info.pbi_start_tvsec,
+        faults,
+        context_switches: csw,
+        syscalls_mach: sys_mach,
+        syscalls_unix: sys_unix,
+        disk_bytes_read: disk_read,
+        disk_bytes_written: disk_write,
     })
 }
 
@@ -531,14 +551,17 @@ pub fn get_process_detail(pid: i32, parent_name: &str) -> Result<ProcessDetail, 
     let name = if name.is_empty() { extract_c_string(&bsd_info.pbi_comm) } else { name };
 
     let task_info = get_task_info(pid);
-    let (thread_count, memory_rss, cpu_time_ns, virtual_size) = match &task_info {
-        Ok(ti) => {
-            let ns = mach_ticks_to_ns(ti.pti_total_user + ti.pti_total_system);
-            (ti.pti_threadnum, ti.pti_resident_size, ns, ti.pti_virtual_size)
-        }
-        Err(_) => (0, 0, 0, 0),
-    };
+    let (thread_count, memory_rss, cpu_time_ns, virtual_size, faults, csw, sys_mach, sys_unix) =
+        match &task_info {
+            Ok(ti) => {
+                let ns = mach_ticks_to_ns(ti.pti_total_user + ti.pti_total_system);
+                (ti.pti_threadnum, ti.pti_resident_size, ns, ti.pti_virtual_size,
+                 ti.pti_faults, ti.pti_csw, ti.pti_syscalls_mach, ti.pti_syscalls_unix)
+            }
+            Err(_) => (0, 0, 0, 0, 0, 0, 0, 0),
+        };
     let memory_phys = get_phys_footprint(pid).unwrap_or(0);
+    let (disk_read, disk_write) = get_disk_io(pid).unwrap_or((0, 0));
 
     let path = get_process_path(pid).unwrap_or_default();
     let cwd = get_process_cwd(pid).unwrap_or_default();
@@ -581,6 +604,12 @@ pub fn get_process_detail(pid: i32, parent_name: &str) -> Result<ProcessDetail, 
         fd_pipes,
         fd_other,
         fd_total: fds.len(),
+        faults,
+        context_switches: csw,
+        syscalls_mach: sys_mach,
+        syscalls_unix: sys_unix,
+        disk_bytes_read: disk_read,
+        disk_bytes_written: disk_write,
         network,
         environment: env,
     })
@@ -589,6 +618,21 @@ pub fn get_process_detail(pid: i32, parent_name: &str) -> Result<ProcessDetail, 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+fn get_disk_io(pid: i32) -> Result<(u64, u64), FfiError> {
+    let mut ri: raw::RusageInfoV4 = unsafe { mem::zeroed() };
+    let ret = unsafe {
+        raw::proc_pid_rusage(
+            pid as c_int,
+            raw::RUSAGE_INFO_V4,
+            &mut ri as *mut _ as *mut c_void,
+        )
+    };
+    if ret != 0 {
+        return Err(check_errno("proc_pid_rusage", pid));
+    }
+    Ok((ri.ri_diskio_bytesread, ri.ri_diskio_byteswritten))
+}
 
 fn get_phys_footprint(pid: i32) -> Result<u64, FfiError> {
     let self_task = unsafe { raw::mach_task_self() };

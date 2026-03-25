@@ -1,10 +1,12 @@
+use std::collections::VecDeque;
+
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::tui::app::{self, App};
+use crate::tui::app::{self, App, Chart};
 
 use super::detail_rect;
 
@@ -136,9 +138,63 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
                 Style::default().fg(t.muted),
             )));
         }
+
+        // Configurable charts.
+        let cc = &app.chart_config;
+
+        if cc.is_enabled(Chart::ThreadCount) && !history.threads.is_empty() {
+            add_chart(&mut lines, "Threads (history)", &history.threads, |v| format!("{:.0}", v), t);
+        }
+        if cc.is_enabled(Chart::FdCount) && !history.fd_count.is_empty() {
+            add_chart(&mut lines, "Open FDs (history)", &history.fd_count, |v| format!("{:.0}", v), t);
+        }
+        if cc.is_enabled(Chart::PageFaults) && !history.faults_rate.is_empty() {
+            add_chart(&mut lines, "Page Faults (rate)", &history.faults_rate, |v| format!("{:.0}/s", v), t);
+        }
+        if cc.is_enabled(Chart::ContextSwitches) && !history.csw_rate.is_empty() {
+            add_chart(&mut lines, "Context Switches (rate)", &history.csw_rate, |v| format!("{:.0}/s", v), t);
+        }
+        if cc.is_enabled(Chart::DiskReads) && !history.disk_read_rate.is_empty() {
+            add_chart(&mut lines, "Disk Read (rate)", &history.disk_read_rate, |v| format!("{}/s", format_rate(v)), t);
+        }
+        if cc.is_enabled(Chart::DiskWrites) && !history.disk_write_rate.is_empty() {
+            add_chart(&mut lines, "Disk Write (rate)", &history.disk_write_rate, |v| format!("{}/s", format_rate(v)), t);
+        }
+        if cc.is_enabled(Chart::SyscallRate) && !history.syscall_rate.is_empty() {
+            add_chart(&mut lines, "Syscalls (rate)", &history.syscall_rate, |v| format!("{:.0}/s", v), t);
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "  [c: configure charts]",
+            Style::default().fg(t.muted),
+        )));
     }
 
     lines
+}
+
+fn add_chart(
+    lines: &mut Vec<Line<'static>>,
+    title: &str,
+    data: &VecDeque<f64>,
+    fmt_peak: impl Fn(f64) -> String,
+    t: &super::super::theme::Theme,
+) {
+    let data_vec: Vec<f64> = data.iter().copied().collect();
+    lines.push(Line::from(""));
+    lines.push(section_header(title, t));
+    lines.push(sparkline_line(&data_vec, t));
+    if let Some(peak) = data.iter().cloned().reduce(f64::max) {
+        lines.push(Line::from(Span::styled(
+            format!("  peak: {}", fmt_peak(peak)),
+            Style::default().fg(t.muted),
+        )));
+    }
+}
+
+fn format_rate(bytes: f64) -> String {
+    app::format_memory(bytes as u64)
 }
 
 fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {

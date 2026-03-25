@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use prexp_core::models::ResourceKind;
 
-use crate::tui::app::{self, App, Column};
+use crate::tui::app::{self, App, Chart, Column};
 use crate::tui::theme::{Theme, THEMES};
 
 use super::detail_rect;
@@ -228,6 +228,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         "  c                   Configure visible columns",
         "  t                   Choose color theme",
         "  i                   Process info panel (Tab/Shift+Tab, y/Y copy env)",
+        "                      c in Resources tab: configure charts",
         "  g                   Toggle system summary",
         "  ?                   Show this help",
         "",
@@ -346,6 +347,48 @@ pub fn draw_config_overlay(frame: &mut Frame, app: &App) {
         .collect();
 
     let widths = [Constraint::Length(4), Constraint::Min(10)];
+    let table = Table::new(rows, widths).block(block);
+    frame.render_widget(table, overlay);
+}
+
+// ---------------------------------------------------------------------------
+// Chart config
+// ---------------------------------------------------------------------------
+
+pub fn draw_chart_config_overlay(frame: &mut Frame, app: &App) {
+    let t = app.current_theme();
+    let area = frame.area();
+    let width = 35u16.min(area.width - 4);
+    let height = (Chart::ALL.len() as u16 + 4).min(area.height - 2);
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let overlay = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, overlay);
+
+    let block = Block::default()
+        .title(" Charts [Enter: toggle, q: close] ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.config_border));
+
+    let rows: Vec<Row> = Chart::ALL
+        .iter()
+        .enumerate()
+        .map(|(i, chart)| {
+            let enabled = app.chart_config.enabled[i];
+            let marker = if enabled { "[x]" } else { "[ ]" };
+            let style = if i == app.chart_config_selected {
+                Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
+            } else if !enabled {
+                Style::default().fg(t.muted)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![Cell::from(marker), Cell::from(chart.label())]).style(style)
+        })
+        .collect();
+
+    let widths = [Constraint::Length(4), Constraint::Min(15)];
     let table = Table::new(rows, widths).block(block);
     frame.render_widget(table, overlay);
 }

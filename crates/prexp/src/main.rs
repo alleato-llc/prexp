@@ -70,6 +70,16 @@ fn run_info_mode(source: &dyn ProcessSource, cli: &Cli, tab: Option<&InfoTab>) -
                     "pipes": detail.fd_pipes,
                     "other": detail.fd_other,
                     "total": detail.fd_total,
+                },
+                "activity": {
+                    "page_faults": detail.faults,
+                    "context_switches": detail.context_switches,
+                    "syscalls_mach": detail.syscalls_mach,
+                    "syscalls_unix": detail.syscalls_unix,
+                },
+                "io": {
+                    "disk_bytes_read": detail.disk_bytes_read,
+                    "disk_bytes_written": detail.disk_bytes_written,
                 }
             });
             serde_json::to_writer_pretty(&mut stdout, &resources)?;

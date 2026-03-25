@@ -18,7 +18,9 @@ pub fn poll_event(timeout: Duration) -> Option<Event> {
 pub fn handle_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
     match app.input_mode {
         InputMode::Normal => {
-            if app.info_open {
+            if app.chart_config_open {
+                handle_chart_config_key(app, key);
+            } else if app.info_open {
                 handle_info_key(app, key);
             } else if app.help_open {
                 handle_help_key(app, key);
@@ -105,6 +107,16 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
     }
 }
 
+fn handle_chart_config_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('c') => app.close_chart_config(),
+        KeyCode::Up | KeyCode::Char('k') => app.chart_config_move_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.chart_config_move_down(),
+        KeyCode::Enter | KeyCode::Char(' ') => app.chart_config_toggle_selected(),
+        _ => {}
+    }
+}
+
 fn handle_config_key(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('c') => app.close_config(),
@@ -137,6 +149,7 @@ fn handle_info_key(app: &mut App, key: KeyEvent) {
             let msg = app.yank_all_env();
             app.status_message = Some(msg);
         }
+        KeyCode::Char('c') => app.open_chart_config(),
         _ => {}
     }
 }

@@ -131,7 +131,8 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 ### libproc APIs used
 - `proc_listallpids` — enumerate all PIDs
 - `proc_pidinfo(PROC_PIDTBSDINFO)` — PPID, process name (32 chars via `pbi_name`)
-- `proc_pidinfo(PROC_PIDTASKINFO)` — thread count, RSS, CPU time
+- `proc_pidinfo(PROC_PIDTASKINFO)` — thread count, RSS, CPU time, page faults, context switches, syscalls
+- `proc_pid_rusage(RUSAGE_INFO_V4)` — disk I/O bytes read/written
 - `proc_pidinfo(PROC_PIDLISTFDS)` — list open file descriptors
 - `proc_pidfdinfo` — resolve fd details (vnode path, socket info, pipe)
 - `proc_listpidspath` — reverse lookup (PIDs with a given path open)

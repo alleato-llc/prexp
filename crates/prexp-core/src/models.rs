@@ -13,6 +13,12 @@ pub struct ProcessSnapshot {
     pub memory_phys: u64,
     /// Cumulative CPU time (user + system) in nanoseconds.
     pub cpu_time_ns: u64,
+    pub faults: i32,
+    pub context_switches: i32,
+    pub syscalls_mach: i32,
+    pub syscalls_unix: i32,
+    pub disk_bytes_read: u64,
+    pub disk_bytes_written: u64,
     /// Process state (running, sleeping, zombie, etc.).
     pub state: prexp_ffi::ProcessState,
     /// Whether we had full access to this process's fds.

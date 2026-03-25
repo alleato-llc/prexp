@@ -9,7 +9,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "node".into(),
             thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 OpenResource {
                     descriptor: 3,
@@ -33,7 +33,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "cargo".into(),
             thread_count: 2,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![OpenResource {
                 descriptor: 4,
                 kind: ResourceKind::File,

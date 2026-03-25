@@ -39,30 +39,123 @@ pub struct FileOpener {
     pub descriptor: i32,
 }
 
-/// Historical CPU/memory data for sparkline charts.
+/// A configurable chart in the info panel Resources tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Chart {
+    ThreadCount,
+    FdCount,
+    PageFaults,
+    ContextSwitches,
+    DiskReads,
+    DiskWrites,
+    SyscallRate,
+}
+
+impl Chart {
+    pub const ALL: &'static [Chart] = &[
+        Chart::ThreadCount, Chart::FdCount, Chart::PageFaults,
+        Chart::ContextSwitches, Chart::DiskReads, Chart::DiskWrites,
+        Chart::SyscallRate,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Chart::ThreadCount => "Threads",
+            Chart::FdCount => "Open FDs",
+            Chart::PageFaults => "Page Faults",
+            Chart::ContextSwitches => "Context Switches",
+            Chart::DiskReads => "Disk Reads",
+            Chart::DiskWrites => "Disk Writes",
+            Chart::SyscallRate => "Syscalls",
+        }
+    }
+}
+
+/// Chart visibility configuration. All enabled by default.
+#[derive(Debug, Clone)]
+pub struct ChartConfig {
+    pub enabled: Vec<bool>,
+}
+
+impl Default for ChartConfig {
+    fn default() -> Self {
+        Self {
+            enabled: vec![true; Chart::ALL.len()],
+        }
+    }
+}
+
+impl ChartConfig {
+    pub fn is_enabled(&self, chart: Chart) -> bool {
+        let idx = Chart::ALL.iter().position(|&c| c == chart).unwrap();
+        self.enabled[idx]
+    }
+
+    pub fn toggle(&mut self, index: usize) {
+        if index < self.enabled.len() {
+            self.enabled[index] = !self.enabled[index];
+        }
+    }
+}
+
+/// Previous cumulative counters per process (for delta computation).
+#[derive(Debug, Clone, Default)]
+pub struct ProcessCounters {
+    pub faults: i32,
+    pub context_switches: i32,
+    pub syscalls: i64,
+    pub disk_read: u64,
+    pub disk_write: u64,
+}
+
+/// Historical data for sparkline charts.
 #[derive(Debug, Clone)]
 pub struct ProcessHistory {
     pub cpu: VecDeque<f64>,
     pub memory: VecDeque<u64>,
+    pub threads: VecDeque<f64>,
+    pub fd_count: VecDeque<f64>,
+    pub faults_rate: VecDeque<f64>,
+    pub csw_rate: VecDeque<f64>,
+    pub disk_read_rate: VecDeque<f64>,
+    pub disk_write_rate: VecDeque<f64>,
+    pub syscall_rate: VecDeque<f64>,
 }
 
 impl ProcessHistory {
-    const MAX_SAMPLES: usize = 60;
+    pub const MAX_SAMPLES: usize = 60;
 
     pub fn new() -> Self {
         Self {
             cpu: VecDeque::with_capacity(Self::MAX_SAMPLES),
             memory: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            threads: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            fd_count: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            faults_rate: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            csw_rate: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            disk_read_rate: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            disk_write_rate: VecDeque::with_capacity(Self::MAX_SAMPLES),
+            syscall_rate: VecDeque::with_capacity(Self::MAX_SAMPLES),
         }
     }
 
-    pub fn push(&mut self, cpu_pct: f64, memory_rss: u64) {
-        if self.cpu.len() >= Self::MAX_SAMPLES {
-            self.cpu.pop_front();
-            self.memory.pop_front();
+    fn push_val(deque: &mut VecDeque<f64>, val: f64) {
+        if deque.len() >= Self::MAX_SAMPLES {
+            deque.pop_front();
         }
-        self.cpu.push_back(cpu_pct);
-        self.memory.push_back(memory_rss);
+        deque.push_back(val);
+    }
+
+    fn push_val_u64(deque: &mut VecDeque<u64>, val: u64) {
+        if deque.len() >= Self::MAX_SAMPLES {
+            deque.pop_front();
+        }
+        deque.push_back(val);
+    }
+
+    pub fn push(&mut self, cpu_pct: f64, memory_rss: u64) {
+        Self::push_val(&mut self.cpu, cpu_pct);
+        Self::push_val_u64(&mut self.memory, memory_rss);
     }
 }
 
@@ -263,6 +356,12 @@ pub struct App {
     pub help_open: bool,
     pub help_scroll: usize,
 
+    // Chart config
+    pub chart_config: ChartConfig,
+    pub chart_config_open: bool,
+    pub chart_config_selected: usize,
+    pub(crate) prev_counters: HashMap<i32, ProcessCounters>,
+
     // Info panel
     pub info_open: bool,
     pub info_tab: usize,
@@ -326,6 +425,10 @@ impl App {
             theme_open: false,
             help_open: false,
             help_scroll: 0,
+            chart_config: ChartConfig::default(),
+            chart_config_open: false,
+            chart_config_selected: 0,
+            prev_counters: HashMap::new(),
             info_open: false,
             info_tab: 0,
             info_scroll: 0,
@@ -359,16 +462,67 @@ impl App {
     }
 
     fn update_history(&mut self, snapshots: &[ProcessSnapshot]) {
+        let elapsed_secs = self.prev_refresh
+            .map(|prev| prev.elapsed().as_secs_f64())
+            .unwrap_or(0.0);
+
         for snap in snapshots {
             let cpu_pct = self.cpu_percentages.get(&snap.pid).copied().unwrap_or(0.0);
             let history = self.process_history
                 .entry(snap.pid)
                 .or_insert_with(ProcessHistory::new);
             history.push(cpu_pct, snap.memory_rss);
+
+            // Absolute charts.
+            if self.chart_config.is_enabled(Chart::ThreadCount) {
+                ProcessHistory::push_val(&mut history.threads, snap.thread_count as f64);
+            }
+            if self.chart_config.is_enabled(Chart::FdCount) {
+                ProcessHistory::push_val(&mut history.fd_count, snap.resources.len() as f64);
+            }
+
+            // Delta-based charts.
+            if elapsed_secs > 0.0 {
+                let prev = self.prev_counters.get(&snap.pid);
+                if let Some(prev) = prev {
+                    if self.chart_config.is_enabled(Chart::PageFaults) {
+                        let delta = (snap.faults - prev.faults).max(0) as f64;
+                        ProcessHistory::push_val(&mut history.faults_rate, delta / elapsed_secs);
+                    }
+                    if self.chart_config.is_enabled(Chart::ContextSwitches) {
+                        let delta = (snap.context_switches - prev.context_switches).max(0) as f64;
+                        ProcessHistory::push_val(&mut history.csw_rate, delta / elapsed_secs);
+                    }
+                    if self.chart_config.is_enabled(Chart::SyscallRate) {
+                        let cur_sys = snap.syscalls_mach as i64 + snap.syscalls_unix as i64;
+                        let delta = (cur_sys - prev.syscalls).max(0) as f64;
+                        ProcessHistory::push_val(&mut history.syscall_rate, delta / elapsed_secs);
+                    }
+                    if self.chart_config.is_enabled(Chart::DiskReads) {
+                        let delta = snap.disk_bytes_read.saturating_sub(prev.disk_read) as f64;
+                        ProcessHistory::push_val(&mut history.disk_read_rate, delta / elapsed_secs);
+                    }
+                    if self.chart_config.is_enabled(Chart::DiskWrites) {
+                        let delta = snap.disk_bytes_written.saturating_sub(prev.disk_write) as f64;
+                        ProcessHistory::push_val(&mut history.disk_write_rate, delta / elapsed_secs);
+                    }
+                }
+            }
+
+            // Store current counters for next delta.
+            self.prev_counters.insert(snap.pid, ProcessCounters {
+                faults: snap.faults,
+                context_switches: snap.context_switches,
+                syscalls: snap.syscalls_mach as i64 + snap.syscalls_unix as i64,
+                disk_read: snap.disk_bytes_read,
+                disk_write: snap.disk_bytes_written,
+            });
         }
-        // Remove history for processes that no longer exist.
+
+        // Remove history and counters for dead processes.
         let pids: std::collections::HashSet<i32> = snapshots.iter().map(|s| s.pid).collect();
         self.process_history.retain(|pid, _| pids.contains(pid));
+        self.prev_counters.retain(|pid, _| pids.contains(pid));
     }
 
     pub fn needs_refresh(&self) -> bool {
@@ -713,6 +867,33 @@ impl App {
 
     pub fn current_theme(&self) -> &super::theme::Theme {
         &super::theme::THEMES[self.theme_index]
+    }
+
+    // -- Chart config --
+
+    pub fn open_chart_config(&mut self) {
+        self.chart_config_open = true;
+        self.chart_config_selected = 0;
+    }
+
+    pub fn close_chart_config(&mut self) {
+        self.chart_config_open = false;
+    }
+
+    pub fn chart_config_move_up(&mut self) {
+        if self.chart_config_selected > 0 {
+            self.chart_config_selected -= 1;
+        }
+    }
+
+    pub fn chart_config_move_down(&mut self) {
+        if self.chart_config_selected < Chart::ALL.len() - 1 {
+            self.chart_config_selected += 1;
+        }
+    }
+
+    pub fn chart_config_toggle_selected(&mut self) {
+        self.chart_config.toggle(self.chart_config_selected);
     }
 
     // -- Info panel --

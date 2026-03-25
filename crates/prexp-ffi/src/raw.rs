@@ -65,9 +65,42 @@ pub struct TaskVmInfo {
     pub phys_footprint: u64,
 }
 
+/// Flavor for proc_pid_rusage.
+pub const RUSAGE_INFO_V4: c_int = 4;
+
+/// Partial `struct rusage_info_v4` — disk I/O fields we need.
+/// Total size is 296 bytes. We define the full struct to ensure correct size.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct RusageInfoV4 {
+    pub ri_uuid: [u8; 16],
+    pub ri_user_time: u64,
+    pub ri_system_time: u64,
+    pub ri_pkg_idle_wkups: u64,
+    pub ri_interrupt_wkups: u64,
+    pub ri_pageins: u64,
+    pub ri_wired_size: u64,
+    pub ri_resident_size: u64,
+    pub ri_phys_footprint: u64,
+    pub ri_proc_start_abstime: u64,
+    pub ri_proc_exit_abstime: u64,
+    pub ri_child_user_time: u64,
+    pub ri_child_system_time: u64,
+    pub ri_child_pkg_idle_wkups: u64,
+    pub ri_child_interrupt_wkups: u64,
+    pub ri_child_pageins: u64,
+    pub ri_child_elapsed_abstime: u64,
+    pub ri_diskio_bytesread: u64,
+    pub ri_diskio_byteswritten: u64,
+    // Remaining fields we don't use — pad to correct size.
+    _pad: [u64; 18],
+}
+
 #[link(name = "proc", kind = "dylib")]
 extern "C" {
     pub fn proc_listallpids(buffer: *mut c_void, buffersize: c_int) -> c_int;
+
+    pub fn proc_pid_rusage(pid: c_int, flavor: c_int, buffer: *mut c_void) -> c_int;
 
     pub fn proc_pidinfo(
         pid: c_int,

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use prexp_core::models::{OpenResource, ProcessSnapshot, ResourceKind};
 
-use prexp_app::tui::app::{App, Column, FileSortField, InputMode, MainView, ProcessSortField, SortDirection};
+use prexp_app::tui::app::{App, Chart, ChartConfig, Column, FileSortField, InputMode, MainView, ProcessSortField, SortDirection};
 use support::fake_source::FakeProcessSource;
 
 fn resource(fd: i32, kind: ResourceKind, path: Option<&str>) -> OpenResource {
@@ -22,7 +22,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "nginx".into(),
             thread_count: 8,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/access.log")),
                 resource(4, ResourceKind::Socket, None),
@@ -33,7 +33,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 100,
             name: "node".into(),
             thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![resource(3, ResourceKind::File, Some("/app/server.js"))],
         },
         ProcessSnapshot {
@@ -41,7 +41,7 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             ppid: 1,
             name: "redis-server".into(),
             thread_count: 3,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, state: prexp_ffi::ProcessState::Running, accessible: true,
+            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/lib/redis/dump.rdb")),
                 resource(4, ResourceKind::Socket, None),
@@ -807,6 +807,7 @@ fn sample_with_zombie() -> Vec<ProcessSnapshot> {
         memory_rss: 0,
         memory_phys: 0,
         cpu_time_ns: 0,
+        faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0,
         state: prexp_ffi::ProcessState::Zombie,
         accessible: true,
         resources: Vec::new(),
@@ -957,6 +958,12 @@ fn info_env_tab_moves_selection() {
         fd_pipes: 0,
         fd_other: 0,
         fd_total: 0,
+        faults: 0,
+        context_switches: 0,
+        syscalls_mach: 0,
+        syscalls_unix: 0,
+        disk_bytes_read: 0,
+        disk_bytes_written: 0,
         network: Vec::new(),
         environment: vec![
             ("HOME".into(), "/root".into()),
@@ -1038,6 +1045,7 @@ fn history_removes_dead_processes() {
         memory_rss: 1024 * 1024 * 50,
         memory_phys: 1024 * 1024 * 30,
         cpu_time_ns: 1_000_000_000,
+        faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0,
         state: prexp_ffi::ProcessState::Running,
         accessible: true,
         resources: Vec::new(),
@@ -1048,4 +1056,85 @@ fn history_removes_dead_processes() {
     assert!(app.process_history.contains_key(&100));
     assert!(!app.process_history.contains_key(&200));
     assert!(!app.process_history.contains_key(&300));
+}
+
+// -- Chart config --
+
+#[test]
+fn chart_config_all_enabled_by_default() {
+    let config = ChartConfig::default();
+    for chart in Chart::ALL {
+        assert!(config.is_enabled(*chart));
+    }
+}
+
+#[test]
+fn chart_config_toggle() {
+    let (mut app, _) = create_app_with_data();
+    app.open_chart_config();
+    assert!(app.chart_config_open);
+
+    app.chart_config_toggle_selected();
+    assert!(!app.chart_config.is_enabled(Chart::ThreadCount));
+
+    app.chart_config_toggle_selected();
+    assert!(app.chart_config.is_enabled(Chart::ThreadCount));
+}
+
+#[test]
+fn chart_config_navigation() {
+    let (mut app, _) = create_app_with_data();
+    app.open_chart_config();
+    assert_eq!(app.chart_config_selected, 0);
+
+    app.chart_config_move_down();
+    assert_eq!(app.chart_config_selected, 1);
+
+    app.chart_config_move_up();
+    assert_eq!(app.chart_config_selected, 0);
+
+    app.chart_config_move_up();
+    assert_eq!(app.chart_config_selected, 0);
+}
+
+#[test]
+fn chart_config_close() {
+    let (mut app, _) = create_app_with_data();
+    app.open_chart_config();
+    assert!(app.chart_config_open);
+    app.close_chart_config();
+    assert!(!app.chart_config_open);
+}
+
+#[test]
+fn disabled_chart_skips_new_data() {
+    let source = FakeProcessSource::new(sample_snapshots());
+    let mut app = App::new(Duration::from_secs(2));
+
+    // Disable thread chart before any data is collected
+    app.chart_config.toggle(0); // ThreadCount is first
+    assert!(!app.chart_config.is_enabled(Chart::ThreadCount));
+
+    app.refresh(&source);
+    app.refresh(&source);
+
+    // Thread history should be empty since chart was disabled from the start
+    for history in app.process_history.values() {
+        assert!(history.threads.is_empty(), "disabled chart should not collect data");
+    }
+}
+
+#[test]
+fn enabled_chart_collects_history() {
+    let (mut app, source) = create_app_with_data();
+
+    // FD count enabled by default
+    assert!(app.chart_config.is_enabled(Chart::FdCount));
+
+    app.refresh(&source);
+
+    // FD count history should have data
+    for history in app.process_history.values() {
+        assert!(!history.fd_count.is_empty(), "enabled chart should collect data");
+    }
 }
