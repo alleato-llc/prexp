@@ -129,6 +129,10 @@ impl App {
     }
 }
 
+pub fn copy_to_clipboard_pub(text: &str) -> Result<(), String> {
+    copy_to_clipboard(text)
+}
+
 fn copy_to_clipboard(text: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let mut child = Command::new("pbcopy")

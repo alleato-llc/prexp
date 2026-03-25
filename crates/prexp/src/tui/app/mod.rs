@@ -1,4 +1,4 @@
-mod search;
+pub(crate) mod search;
 mod sorting;
 pub mod stats;
 mod tree;
@@ -267,6 +267,7 @@ pub struct App {
     pub info_open: bool,
     pub info_tab: usize,
     pub info_scroll: usize,
+    pub info_env_selected: usize,
     pub info_detail: Option<prexp_ffi::ProcessDetail>,
     pub process_history: HashMap<i32, ProcessHistory>,
 
@@ -328,6 +329,7 @@ impl App {
             info_open: false,
             info_tab: 0,
             info_scroll: 0,
+            info_env_selected: 0,
             info_detail: None,
             process_history: HashMap::new(),
             detail_selected: 0,
@@ -738,17 +740,56 @@ impl App {
         if tab < 4 {
             self.info_tab = tab;
             self.info_scroll = 0;
+            self.info_env_selected = 0;
         }
     }
 
+    pub fn info_next_tab(&mut self) {
+        self.info_set_tab((self.info_tab + 1) % 4);
+    }
+
+    pub fn info_prev_tab(&mut self) {
+        self.info_set_tab((self.info_tab + 3) % 4);
+    }
+
     pub fn info_scroll_up(&mut self) {
-        if self.info_scroll > 0 {
+        if self.info_tab == 3 {
+            // Environment tab: move selection.
+            if self.info_env_selected > 0 {
+                self.info_env_selected -= 1;
+            }
+        } else if self.info_scroll > 0 {
             self.info_scroll -= 1;
         }
     }
 
     pub fn info_scroll_down(&mut self) {
-        self.info_scroll += 1;
+        if self.info_tab == 3 {
+            // Environment tab: move selection.
+            if let Some(detail) = &self.info_detail {
+                if self.info_env_selected < detail.environment.len().saturating_sub(1) {
+                    self.info_env_selected += 1;
+                }
+            }
+        } else {
+            self.info_scroll += 1;
+        }
+    }
+
+    pub fn yank_info_env(&self) -> String {
+        if self.info_tab != 3 {
+            return "No path to copy".into();
+        }
+        if let Some(detail) = &self.info_detail {
+            if let Some((key, val)) = detail.environment.get(self.info_env_selected) {
+                let text = format!("{}={}", key, val);
+                return match super::app::search::copy_to_clipboard_pub(&text) {
+                    Ok(()) => format!("Copied to clipboard: {}={}", key, val),
+                    Err(e) => format!("Copy failed: {}", e),
+                };
+            }
+        }
+        "No environment variable selected".into()
     }
 
     // -- Help --

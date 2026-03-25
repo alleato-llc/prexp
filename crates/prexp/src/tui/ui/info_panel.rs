@@ -19,7 +19,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         None => return,
     };
 
-    let tab_labels = ["1 Overview", "2 Resources", "3 Network", "4 Environment"];
+    let tab_labels = ["Overview", "Resources", "Network", "Environment"];
     let tab_bar: Vec<Span> = tab_labels
         .iter()
         .enumerate()
@@ -54,20 +54,23 @@ pub fn draw(frame: &mut Frame, app: &App) {
         ..inner
     };
 
-    let lines = match app.info_tab {
-        0 => overview_lines(detail, t),
-        1 => resources_lines(detail, app, t),
-        2 => network_lines(detail, t),
-        3 => environment_lines(detail, t),
-        _ => Vec::new(),
-    };
+    if app.info_tab == 3 {
+        draw_environment_tab(frame, app, detail, t, content_area);
+    } else {
+        let lines = match app.info_tab {
+            0 => overview_lines(detail, t),
+            1 => resources_lines(detail, app, t),
+            2 => network_lines(detail, t),
+            _ => Vec::new(),
+        };
 
-    let max_scroll = lines.len().saturating_sub(content_area.height as usize);
-    let scroll = app.info_scroll.min(max_scroll);
-    let visible: Vec<Line> = lines.into_iter().skip(scroll).collect();
+        let max_scroll = lines.len().saturating_sub(content_area.height as usize);
+        let scroll = app.info_scroll.min(max_scroll);
+        let visible: Vec<Line> = lines.into_iter().skip(scroll).collect();
 
-    let paragraph = Paragraph::new(visible);
-    frame.render_widget(paragraph, content_area);
+        let paragraph = Paragraph::new(visible);
+        frame.render_widget(paragraph, content_area);
+    }
 }
 
 fn overview_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
@@ -95,16 +98,11 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
         Line::from(""),
         section_header("RESOURCES", t),
         Line::from(""),
-        kv("Threads", &detail.thread_count.to_string()),
-        kv("Virtual", &app::format_memory(detail.virtual_size)),
-        kv("RSS", &app::format_memory(detail.memory_rss)),
-        kv("PMEM", &app::format_memory(detail.memory_phys)),
-        Line::from(""),
-        kv("Files", &detail.fd_files.to_string()),
-        kv("Sockets", &detail.fd_sockets.to_string()),
-        kv("Pipes", &detail.fd_pipes.to_string()),
-        kv("Other", &detail.fd_other.to_string()),
-        kv("Total FDs", &detail.fd_total.to_string()),
+        kv2("Threads", &detail.thread_count.to_string(), "Files", &detail.fd_files.to_string()),
+        kv2("Virtual", &app::format_memory(detail.virtual_size), "Sockets", &detail.fd_sockets.to_string()),
+        kv2("RSS", &app::format_memory(detail.memory_rss), "Pipes", &detail.fd_pipes.to_string()),
+        kv2("PMEM", &app::format_memory(detail.memory_phys), "Other", &detail.fd_other.to_string()),
+        kv2("", "", "Total", &detail.fd_total.to_string()),
     ];
 
     // Sparklines.
@@ -144,9 +142,15 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
 }
 
 fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+    let active = detail.network.iter().filter(|c| {
+        matches!(c.state.as_deref(), Some("ESTABLISHED") | Some("LISTEN"))
+    }).count();
+    let total = detail.network.len();
+    let header = format!("NETWORK CONNECTIONS ({} active, {} total)", active, total);
+
     let mut lines = vec![
         Line::from(""),
-        section_header("NETWORK CONNECTIONS", t),
+        section_header(&header, t),
         Line::from(""),
     ];
 
@@ -168,26 +172,54 @@ fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::The
     lines
 }
 
-fn environment_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
-    let mut lines = vec![
-        Line::from(""),
-        section_header(&format!("ENVIRONMENT ({} vars)", detail.environment.len()), t),
-        Line::from(""),
-    ];
+fn draw_environment_tab(
+    frame: &mut Frame,
+    app: &App,
+    detail: &prexp_ffi::ProcessDetail,
+    t: &super::super::theme::Theme,
+    area: Rect,
+) {
+    use ratatui::widgets::{Row, Table, TableState, Cell};
+
+    let title_line = Line::from(Span::styled(
+        format!("  ENVIRONMENT ({} vars)  [y: copy]", detail.environment.len()),
+        Style::default().fg(t.header).add_modifier(Modifier::BOLD),
+    ));
+    let title_area = Rect { height: 1, ..area };
+    frame.render_widget(Paragraph::new(title_line), title_area);
+
+    let table_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(1),
+        ..area
+    };
 
     if detail.environment.is_empty() {
-        lines.push(Line::from(Span::styled("  No environment variables available", Style::default().fg(t.muted))));
-    } else {
-        for (key, val) in &detail.environment {
-            lines.push(Line::from(vec![
-                Span::styled(format!("  {}", key), Style::default().fg(t.header)),
-                Span::raw("="),
-                Span::raw(val.clone()),
-            ]));
-        }
+        let msg = Paragraph::new(Span::styled("  No environment variables available", Style::default().fg(t.muted)));
+        frame.render_widget(msg, table_area);
+        return;
     }
 
-    lines
+    let rows: Vec<Row> = detail
+        .environment
+        .iter()
+        .map(|(key, val)| {
+            Row::new(vec![
+                Cell::from(key.clone()).style(Style::default().fg(t.header)),
+                Cell::from(val.clone()),
+            ])
+        })
+        .collect();
+
+    let widths = [ratatui::layout::Constraint::Length(25), ratatui::layout::Constraint::Min(30)];
+
+    let table = Table::new(rows, widths)
+        .row_highlight_style(Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ");
+
+    let mut state = TableState::default();
+    state.select(Some(app.info_env_selected));
+    frame.render_stateful_widget(table, table_area, &mut state);
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +235,10 @@ fn section_header(text: &str, t: &super::super::theme::Theme) -> Line<'static> {
 
 fn kv(key: &str, val: &str) -> Line<'static> {
     Line::from(format!("  {:<12}{}", key, val))
+}
+
+fn kv2(key1: &str, val1: &str, key2: &str, val2: &str) -> Line<'static> {
+    Line::from(format!("  {:<12}{:<14}{:<12}{}", key1, val1, key2, val2))
 }
 
 fn kv_styled(key: &str, val: &str, color: Color) -> Line<'static> {

@@ -125,8 +125,14 @@ fn handle_info_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('2') => app.info_set_tab(1),
         KeyCode::Char('3') => app.info_set_tab(2),
         KeyCode::Char('4') => app.info_set_tab(3),
+        KeyCode::Tab => app.info_next_tab(),
+        KeyCode::BackTab => app.info_prev_tab(),
         KeyCode::Up | KeyCode::Char('k') => app.info_scroll_up(),
         KeyCode::Down | KeyCode::Char('j') => app.info_scroll_down(),
+        KeyCode::Char('y') => {
+            let msg = app.yank_info_env();
+            app.status_message = Some(msg);
+        }
         _ => {}
     }
 }
