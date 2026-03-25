@@ -547,6 +547,7 @@ dependencies = [
  "prexp-core",
  "prexp-ffi",
  "ratatui",
+ "serde_json",
 ]
 
 [[package]]
@@ -564,6 +565,7 @@ dependencies = [
 name = "prexp-ffi"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "thiserror",
 ]
 
