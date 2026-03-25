@@ -46,16 +46,14 @@ pub enum Chart {
     FdCount,
     PageFaults,
     ContextSwitches,
-    DiskReads,
-    DiskWrites,
+    DiskIo,
     SyscallRate,
 }
 
 impl Chart {
     pub const ALL: &'static [Chart] = &[
         Chart::ThreadCount, Chart::FdCount, Chart::PageFaults,
-        Chart::ContextSwitches, Chart::DiskReads, Chart::DiskWrites,
-        Chart::SyscallRate,
+        Chart::ContextSwitches, Chart::DiskIo, Chart::SyscallRate,
     ];
 
     pub fn label(self) -> &'static str {
@@ -64,8 +62,7 @@ impl Chart {
             Chart::FdCount => "Open FDs",
             Chart::PageFaults => "Page Faults",
             Chart::ContextSwitches => "Context Switches",
-            Chart::DiskReads => "Disk Reads",
-            Chart::DiskWrites => "Disk Writes",
+            Chart::DiskIo => "Disk I/O (R+W)",
             Chart::SyscallRate => "Syscalls",
         }
     }
@@ -80,7 +77,7 @@ pub struct ChartConfig {
 impl Default for ChartConfig {
     fn default() -> Self {
         Self {
-            enabled: vec![true; Chart::ALL.len()],
+            enabled: vec![false; Chart::ALL.len()],
         }
     }
 }
@@ -498,13 +495,11 @@ impl App {
                         let delta = (cur_sys - prev.syscalls).max(0) as f64;
                         ProcessHistory::push_val(&mut history.syscall_rate, delta / elapsed_secs);
                     }
-                    if self.chart_config.is_enabled(Chart::DiskReads) {
-                        let delta = snap.disk_bytes_read.saturating_sub(prev.disk_read) as f64;
-                        ProcessHistory::push_val(&mut history.disk_read_rate, delta / elapsed_secs);
-                    }
-                    if self.chart_config.is_enabled(Chart::DiskWrites) {
-                        let delta = snap.disk_bytes_written.saturating_sub(prev.disk_write) as f64;
-                        ProcessHistory::push_val(&mut history.disk_write_rate, delta / elapsed_secs);
+                    if self.chart_config.is_enabled(Chart::DiskIo) {
+                        let dr = snap.disk_bytes_read.saturating_sub(prev.disk_read) as f64;
+                        let dw = snap.disk_bytes_written.saturating_sub(prev.disk_write) as f64;
+                        ProcessHistory::push_val(&mut history.disk_read_rate, dr / elapsed_secs);
+                        ProcessHistory::push_val(&mut history.disk_write_rate, dw / elapsed_secs);
                     }
                 }
             }

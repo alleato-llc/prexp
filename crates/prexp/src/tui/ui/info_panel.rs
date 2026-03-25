@@ -154,11 +154,15 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
         if cc.is_enabled(Chart::ContextSwitches) && !history.csw_rate.is_empty() {
             add_chart(&mut lines, "Context Switches (rate)", &history.csw_rate, |v| format!("{:.0}/s", v), t);
         }
-        if cc.is_enabled(Chart::DiskReads) && !history.disk_read_rate.is_empty() {
-            add_chart(&mut lines, "Disk Read (rate)", &history.disk_read_rate, |v| format!("{}/s", format_rate(v)), t);
-        }
-        if cc.is_enabled(Chart::DiskWrites) && !history.disk_write_rate.is_empty() {
-            add_chart(&mut lines, "Disk Write (rate)", &history.disk_write_rate, |v| format!("{}/s", format_rate(v)), t);
+        if cc.is_enabled(Chart::DiskIo) && (!history.disk_read_rate.is_empty() || !history.disk_write_rate.is_empty()) {
+            add_dual_chart(
+                &mut lines,
+                "Disk I/O (rate)",
+                "R", &history.disk_read_rate,
+                "W", &history.disk_write_rate,
+                |v| format!("{}/s", format_rate(v)),
+                t,
+            );
         }
         if cc.is_enabled(Chart::SyscallRate) && !history.syscall_rate.is_empty() {
             add_chart(&mut lines, "Syscalls (rate)", &history.syscall_rate, |v| format!("{:.0}/s", v), t);
@@ -191,6 +195,51 @@ fn add_chart(
             Style::default().fg(t.muted),
         )));
     }
+}
+
+fn add_dual_chart(
+    lines: &mut Vec<Line<'static>>,
+    title: &str,
+    label1: &str,
+    data1: &VecDeque<f64>,
+    label2: &str,
+    data2: &VecDeque<f64>,
+    fmt_peak: impl Fn(f64) -> String,
+    t: &super::super::theme::Theme,
+) {
+    lines.push(Line::from(""));
+    lines.push(section_header(title, t));
+
+    // Line 1: reads
+    let d1: Vec<f64> = data1.iter().copied().collect();
+    let peak1 = data1.iter().cloned().reduce(f64::max).unwrap_or(0.0);
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {} ", label1), Style::default().fg(t.header)),
+        sparkline_span(&d1, t),
+        Span::styled(format!("  peak: {}", fmt_peak(peak1)), Style::default().fg(t.muted)),
+    ]));
+
+    // Line 2: writes
+    let d2: Vec<f64> = data2.iter().copied().collect();
+    let peak2 = data2.iter().cloned().reduce(f64::max).unwrap_or(0.0);
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {} ", label2), Style::default().fg(t.header)),
+        sparkline_span(&d2, t),
+        Span::styled(format!("  peak: {}", fmt_peak(peak2)), Style::default().fg(t.muted)),
+    ]));
+}
+
+fn sparkline_span(data: &[f64], t: &super::super::theme::Theme) -> Span<'static> {
+    const BLOCKS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if data.is_empty() {
+        return Span::styled("(no data)", Style::default().fg(t.muted));
+    }
+    let max = data.iter().cloned().reduce(f64::max).unwrap_or(1.0).max(1.0);
+    let chars: String = data.iter().map(|&v| {
+        let idx = ((v / max) * 7.0).round() as usize;
+        BLOCKS[idx.min(7)]
+    }).collect();
+    Span::styled(chars, Style::default().fg(t.accent))
 }
 
 fn format_rate(bytes: f64) -> String {

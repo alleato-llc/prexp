@@ -1061,10 +1061,10 @@ fn history_removes_dead_processes() {
 // -- Chart config --
 
 #[test]
-fn chart_config_all_enabled_by_default() {
+fn chart_config_all_disabled_by_default() {
     let config = ChartConfig::default();
     for chart in Chart::ALL {
-        assert!(config.is_enabled(*chart));
+        assert!(!config.is_enabled(*chart), "{:?} should be off by default", chart);
     }
 }
 
@@ -1074,11 +1074,13 @@ fn chart_config_toggle() {
     app.open_chart_config();
     assert!(app.chart_config_open);
 
-    app.chart_config_toggle_selected();
-    assert!(!app.chart_config.is_enabled(Chart::ThreadCount));
-
+    // Default is off, toggle turns it on
     app.chart_config_toggle_selected();
     assert!(app.chart_config.is_enabled(Chart::ThreadCount));
+
+    // Toggle again turns it off
+    app.chart_config_toggle_selected();
+    assert!(!app.chart_config.is_enabled(Chart::ThreadCount));
 }
 
 #[test]
@@ -1111,14 +1113,13 @@ fn disabled_chart_skips_new_data() {
     let source = FakeProcessSource::new(sample_snapshots());
     let mut app = App::new(Duration::from_secs(2));
 
-    // Disable thread chart before any data is collected
-    app.chart_config.toggle(0); // ThreadCount is first
+    // ThreadCount is off by default
     assert!(!app.chart_config.is_enabled(Chart::ThreadCount));
 
     app.refresh(&source);
     app.refresh(&source);
 
-    // Thread history should be empty since chart was disabled from the start
+    // Thread history should be empty since chart was never enabled
     for history in app.process_history.values() {
         assert!(history.threads.is_empty(), "disabled chart should not collect data");
     }
@@ -1126,9 +1127,12 @@ fn disabled_chart_skips_new_data() {
 
 #[test]
 fn enabled_chart_collects_history() {
-    let (mut app, source) = create_app_with_data();
+    let source = FakeProcessSource::new(sample_snapshots());
+    let mut app = App::new(Duration::from_secs(2));
 
-    // FD count enabled by default
+    // Enable FD count chart manually (off by default)
+    let fd_idx = Chart::ALL.iter().position(|&c| c == Chart::FdCount).unwrap();
+    app.chart_config.toggle(fd_idx);
     assert!(app.chart_config.is_enabled(Chart::FdCount));
 
     app.refresh(&source);
