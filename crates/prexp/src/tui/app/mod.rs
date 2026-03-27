@@ -454,6 +454,12 @@ pub struct App {
     // Detail overlay state
     pub detail_selected: usize,
     pub detail_h_scroll: usize,
+    pub detail_search: String,
+    pub detail_searching: bool,
+    pub detail_kind_filter: FileKindFilter,
+    pub detail_kind_picker_open: bool,
+    pub detail_kind_picker_selected: usize,
+    pub detail_filtered_indices: Vec<usize>,
 }
 
 impl App {
@@ -524,6 +530,12 @@ impl App {
             kill_target_name: None,
             detail_selected: 0,
             detail_h_scroll: 0,
+            detail_search: String::new(),
+            detail_searching: false,
+            detail_kind_filter: FileKindFilter::All,
+            detail_kind_picker_open: false,
+            detail_kind_picker_selected: 0,
+            detail_filtered_indices: Vec::new(),
         }
     }
 
@@ -862,10 +874,7 @@ impl App {
     pub fn move_down(&mut self) {
         if self.detail_open {
             let max = match self.main_view {
-                MainView::Processes => self
-                    .selected_snapshot()
-                    .map(|s| s.resources.len())
-                    .unwrap_or(0),
+                MainView::Processes => self.detail_filtered_indices.len(),
                 MainView::Files => self
                     .selected_file_entry()
                     .map(|e| e.openers.len())
@@ -919,6 +928,11 @@ impl App {
             self.detail_open = true;
             self.detail_selected = 0;
             self.detail_h_scroll = 0;
+            self.detail_search.clear();
+            self.detail_searching = false;
+            self.detail_kind_filter = FileKindFilter::All;
+            self.detail_kind_picker_open = false;
+            self.rebuild_detail_filter();
         }
     }
 
@@ -926,6 +940,91 @@ impl App {
         self.detail_open = false;
         self.detail_selected = 0;
         self.detail_h_scroll = 0;
+        self.detail_search.clear();
+        self.detail_searching = false;
+        self.detail_kind_filter = FileKindFilter::All;
+        self.detail_filtered_indices.clear();
+    }
+
+    /// Rebuild filtered resource indices for the detail overlay.
+    pub fn rebuild_detail_filter(&mut self) {
+        if self.main_view != MainView::Processes {
+            return;
+        }
+        if let Some(snap) = self.selected_snapshot() {
+            let search = self.detail_search.to_lowercase();
+            let kind = self.detail_kind_filter;
+            self.detail_filtered_indices = snap
+                .resources
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| kind.matches(&r.kind))
+                .filter(|(_, r)| {
+                    search.is_empty()
+                        || r.path.as_deref().unwrap_or("").to_lowercase().contains(&search)
+                        || format!("{:?}", r.kind).to_lowercase().contains(&search)
+                })
+                .map(|(i, _)| i)
+                .collect();
+
+            self.detail_selected = self
+                .detail_selected
+                .min(self.detail_filtered_indices.len().saturating_sub(1));
+        }
+    }
+
+    pub fn detail_search_push(&mut self, c: char) {
+        self.detail_search.push(c);
+        self.rebuild_detail_filter();
+    }
+
+    pub fn detail_search_pop(&mut self) {
+        self.detail_search.pop();
+        self.rebuild_detail_filter();
+    }
+
+    pub fn detail_search_start(&mut self) {
+        self.detail_searching = true;
+    }
+
+    pub fn detail_search_stop(&mut self) {
+        self.detail_searching = false;
+    }
+
+    pub fn detail_search_clear(&mut self) {
+        self.detail_search.clear();
+        self.detail_searching = false;
+        self.rebuild_detail_filter();
+    }
+
+    pub fn open_detail_kind_picker(&mut self) {
+        self.detail_kind_picker_open = true;
+        self.detail_kind_picker_selected = FileKindFilter::OPTIONS
+            .iter()
+            .position(|&f| f == self.detail_kind_filter)
+            .unwrap_or(0);
+    }
+
+    pub fn close_detail_kind_picker(&mut self) {
+        self.detail_kind_picker_open = false;
+    }
+
+    pub fn detail_kind_picker_up(&mut self) {
+        if self.detail_kind_picker_selected > 0 {
+            self.detail_kind_picker_selected -= 1;
+        }
+    }
+
+    pub fn detail_kind_picker_down(&mut self) {
+        if self.detail_kind_picker_selected < FileKindFilter::OPTIONS.len() - 1 {
+            self.detail_kind_picker_selected += 1;
+        }
+    }
+
+    pub fn detail_kind_picker_select(&mut self) {
+        self.detail_kind_filter = FileKindFilter::OPTIONS[self.detail_kind_picker_selected];
+        self.detail_kind_picker_open = false;
+        self.rebuild_detail_filter();
     }
 
     // -- Theme picker --

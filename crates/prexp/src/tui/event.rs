@@ -32,6 +32,10 @@ pub fn handle_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
                 handle_theme_key(app, key);
             } else if app.config_open {
                 handle_config_key(app, key);
+            } else if app.detail_kind_picker_open {
+                handle_detail_kind_picker_key(app, key);
+            } else if app.detail_searching {
+                handle_detail_search_key(app, key);
             } else if app.detail_open {
                 handle_detail_key(app, key);
             } else {
@@ -111,7 +115,13 @@ fn handle_kind_picker_key(app: &mut App, key: KeyEvent) {
 
 fn handle_detail_key(app: &mut App, key: KeyEvent) {
     match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => app.close_detail(),
+        KeyCode::Char('q') | KeyCode::Esc => {
+            if !app.detail_search.is_empty() {
+                app.detail_search_clear();
+            } else {
+                app.close_detail();
+            }
+        }
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true;
         }
@@ -119,6 +129,12 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
         KeyCode::Left | KeyCode::Char('h') => app.scroll_left(),
         KeyCode::Right | KeyCode::Char('l') => app.scroll_right(),
+        KeyCode::Char('/') => app.detail_search_start(),
+        KeyCode::Char('f') => {
+            if app.main_view == MainView::Processes {
+                app.open_detail_kind_picker();
+            }
+        }
         KeyCode::Char('y') => {
             let msg = app.yank_selected_path();
             app.status_message = Some(msg);
@@ -149,6 +165,26 @@ fn handle_kill_key(app: &mut App, key: KeyEvent) {
             _ => {}
         },
         None => {}
+    }
+}
+
+fn handle_detail_search_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc => app.detail_search_clear(),
+        KeyCode::Enter => app.detail_search_stop(),
+        KeyCode::Backspace => app.detail_search_pop(),
+        KeyCode::Char(c) => app.detail_search_push(c),
+        _ => {}
+    }
+}
+
+fn handle_detail_kind_picker_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('f') => app.close_detail_kind_picker(),
+        KeyCode::Up | KeyCode::Char('k') => app.detail_kind_picker_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.detail_kind_picker_down(),
+        KeyCode::Enter => app.detail_kind_picker_select(),
+        _ => {}
     }
 }
 

@@ -107,6 +107,8 @@ fn make_bar(pct: f64, width: usize) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn draw_process_detail(frame: &mut Frame, app: &App) {
+    use crate::tui::app::FileKindFilter;
+
     let t = app.current_theme();
     let area = frame.area();
     let overlay = detail_rect(area);
@@ -117,9 +119,24 @@ pub fn draw_process_detail(frame: &mut Frame, app: &App) {
         None => return,
     };
 
+    let filter_label = if app.detail_kind_filter != FileKindFilter::All {
+        format!(" [{}]", app.detail_kind_filter.label())
+    } else {
+        String::new()
+    };
+
+    let search_label = if app.detail_searching {
+        format!(" [/{}]", app.detail_search)
+    } else if !app.detail_search.is_empty() {
+        format!(" [/{}] {} matches", app.detail_search, app.detail_filtered_indices.len())
+    } else {
+        String::new()
+    };
+
     let title = format!(
-        " {} (pid {}) — {} fds  [h/l: scroll, y: copy, q/Esc: back] ",
-        snap.name, snap.pid, snap.resources.len()
+        " {} (pid {}) — {} fds{}{}  [/: search, f: filter, y: copy] ",
+        snap.name, snap.pid, app.detail_filtered_indices.len(),
+        filter_label, search_label
     );
 
     let block = Block::default()
@@ -131,10 +148,10 @@ pub fn draw_process_detail(frame: &mut Frame, app: &App) {
         .style(Style::default().fg(t.header).add_modifier(Modifier::BOLD))
         .height(1);
 
-    let rows: Vec<Row> = snap
-        .resources
+    let rows: Vec<Row> = app.detail_filtered_indices
         .iter()
-        .map(|r| {
+        .map(|&i| {
+            let r = &snap.resources[i];
             let kind = format!("{:?}", r.kind).to_lowercase();
             let full_path = r.path.as_deref().unwrap_or("-");
             let displayed_path = if app.detail_h_scroll < full_path.len() {
@@ -544,6 +561,41 @@ pub fn draw_kind_picker(frame: &mut Frame, app: &App) {
         .map(|(i, kind)| {
             let marker = if *kind == app.file_kind_filter { "▶" } else { " " };
             let style = if i == app.file_kind_picker_selected {
+                Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![Cell::from(marker), Cell::from(kind.label())]).style(style)
+        })
+        .collect();
+
+    let widths = [Constraint::Length(2), Constraint::Min(15)];
+    let table = Table::new(rows, widths).block(block);
+    frame.render_widget(table, overlay);
+}
+
+pub fn draw_detail_kind_picker(frame: &mut Frame, app: &App) {
+    let t = app.current_theme();
+    let area = frame.area();
+    let width = 30u16.min(area.width - 4);
+    let height = (FileKindFilter::OPTIONS.len() as u16 + 4).min(area.height - 2);
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let overlay = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, overlay);
+
+    let block = Block::default()
+        .title(" Filter by kind [Enter: select] ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_file));
+
+    let rows: Vec<Row> = FileKindFilter::OPTIONS
+        .iter()
+        .enumerate()
+        .map(|(i, kind)| {
+            let marker = if *kind == app.detail_kind_filter { "▶" } else { " " };
+            let style = if i == app.detail_kind_picker_selected {
                 Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()

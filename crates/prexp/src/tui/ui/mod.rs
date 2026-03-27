@@ -52,6 +52,12 @@ pub fn draw(frame: &mut Frame, app: &App) {
         overlays::draw_theme_picker(frame, app);
     } else if app.config_open {
         overlays::draw_config_overlay(frame, app);
+    } else if app.detail_kind_picker_open {
+        match app.main_view {
+            MainView::Processes => overlays::draw_process_detail(frame, app),
+            MainView::Files => file_list::draw_detail(frame, app),
+        }
+        overlays::draw_detail_kind_picker(frame, app);
     } else if app.detail_open {
         match app.main_view {
             MainView::Processes => overlays::draw_process_detail(frame, app),
