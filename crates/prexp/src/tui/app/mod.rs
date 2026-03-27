@@ -482,12 +482,14 @@ impl App {
             if elapsed_secs > 0.0 {
                 let prev = self.prev_counters.get(&snap.pid);
                 if let Some(prev) = prev {
+                    // Use i64 for all deltas to avoid i32 overflow when
+                    // cumulative counters wrap past INT_MAX.
                     if self.chart_config.is_enabled(Chart::PageFaults) {
-                        let delta = (snap.faults - prev.faults).max(0) as f64;
+                        let delta = (snap.faults as i64 - prev.faults as i64).max(0) as f64;
                         ProcessHistory::push_val(&mut history.faults_rate, delta / elapsed_secs);
                     }
                     if self.chart_config.is_enabled(Chart::ContextSwitches) {
-                        let delta = (snap.context_switches - prev.context_switches).max(0) as f64;
+                        let delta = (snap.context_switches as i64 - prev.context_switches as i64).max(0) as f64;
                         ProcessHistory::push_val(&mut history.csw_rate, delta / elapsed_secs);
                     }
                     if self.chart_config.is_enabled(Chart::SyscallRate) {
