@@ -38,7 +38,9 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     draw_status_bar(frame, app, chunks[2]);
 
-    if app.chart_config_open {
+    if app.kill_state.is_some() {
+        overlays::draw_kill_overlay(frame, app);
+    } else if app.chart_config_open {
         overlays::draw_chart_config_overlay(frame, app);
     } else if app.info_open {
         info_panel::draw(frame, app);

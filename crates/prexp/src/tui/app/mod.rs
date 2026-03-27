@@ -156,6 +156,36 @@ impl ProcessHistory {
     }
 }
 
+/// A signal that can be sent to a process.
+#[derive(Debug, Clone, Copy)]
+pub struct Signal {
+    pub number: i32,
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+pub const SIGNALS: &[Signal] = &[
+    Signal { number: 15, name: "SIGTERM", description: "Graceful shutdown" },
+    Signal { number: 9,  name: "SIGKILL", description: "Force kill (cannot be caught)" },
+    Signal { number: 1,  name: "SIGHUP",  description: "Hangup / reload config" },
+    Signal { number: 2,  name: "SIGINT",  description: "Interrupt (like Ctrl+C)" },
+    Signal { number: 19, name: "SIGSTOP", description: "Pause process" },
+    Signal { number: 18, name: "SIGCONT", description: "Resume paused process" },
+    Signal { number: 30, name: "SIGUSR1", description: "User-defined signal 1" },
+    Signal { number: 31, name: "SIGUSR2", description: "User-defined signal 2" },
+];
+
+/// State of the kill signal flow.
+#[derive(Debug, Clone)]
+pub enum KillState {
+    /// Signal picker is open, user selects which signal.
+    Picking { selected: usize },
+    /// User selected "Custom", typing a signal number.
+    CustomInput { input: String },
+    /// Confirmation prompt: "Send SIGx to name (pid)? [y/n]"
+    Confirming { signal: i32, signal_name: String },
+}
+
 /// The main view mode (toggled with 'v').
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MainView {
@@ -367,6 +397,11 @@ pub struct App {
     pub info_detail: Option<prexp_ffi::ProcessDetail>,
     pub process_history: HashMap<i32, ProcessHistory>,
 
+    // Kill signal
+    pub kill_state: Option<KillState>,
+    pub kill_target_pid: Option<i32>,
+    pub kill_target_name: Option<String>,
+
     // Detail overlay state
     pub detail_selected: usize,
     pub detail_h_scroll: usize,
@@ -432,6 +467,9 @@ impl App {
             info_env_selected: 0,
             info_detail: None,
             process_history: HashMap::new(),
+            kill_state: None,
+            kill_target_pid: None,
+            kill_target_name: None,
             detail_selected: 0,
             detail_h_scroll: 0,
         }
@@ -993,6 +1031,105 @@ impl App {
         "No environment variables".into()
     }
 
+    // -- Kill signal --
+
+    pub fn open_kill_picker(&mut self) {
+        let target = self.selected_snapshot().map(|s| (s.pid, s.name.clone()));
+        if let Some((pid, name)) = target {
+            self.kill_target_pid = Some(pid);
+            self.kill_target_name = Some(name);
+            self.kill_state = Some(KillState::Picking { selected: 0 });
+        }
+    }
+
+    pub fn close_kill(&mut self) {
+        self.kill_state = None;
+        self.kill_target_pid = None;
+        self.kill_target_name = None;
+    }
+
+    pub fn kill_pick_up(&mut self) {
+        if let Some(KillState::Picking { ref mut selected }) = self.kill_state {
+            if *selected > 0 {
+                *selected -= 1;
+            }
+        }
+    }
+
+    pub fn kill_pick_down(&mut self) {
+        if let Some(KillState::Picking { ref mut selected }) = self.kill_state {
+            // SIGNALS.len() + 1 for the "Custom" option
+            if *selected < SIGNALS.len() {
+                *selected += 1;
+            }
+        }
+    }
+
+    pub fn kill_select(&mut self) {
+        if let Some(KillState::Picking { selected }) = self.kill_state {
+            if selected < SIGNALS.len() {
+                let sig = &SIGNALS[selected];
+                self.kill_state = Some(KillState::Confirming {
+                    signal: sig.number,
+                    signal_name: sig.name.to_string(),
+                });
+            } else {
+                // Custom
+                self.kill_state = Some(KillState::CustomInput { input: String::new() });
+            }
+        }
+    }
+
+    pub fn kill_custom_push(&mut self, c: char) {
+        if let Some(KillState::CustomInput { ref mut input }) = self.kill_state {
+            if c.is_ascii_digit() {
+                input.push(c);
+            }
+        }
+    }
+
+    pub fn kill_custom_pop(&mut self) {
+        if let Some(KillState::CustomInput { ref mut input }) = self.kill_state {
+            input.pop();
+        }
+    }
+
+    pub fn kill_custom_confirm(&mut self) {
+        if let Some(KillState::CustomInput { ref input }) = self.kill_state {
+            if let Ok(num) = input.parse::<i32>() {
+                let name = format!("SIG({})", num);
+                self.kill_state = Some(KillState::Confirming {
+                    signal: num,
+                    signal_name: name,
+                });
+            }
+        }
+    }
+
+    pub fn kill_confirm(&mut self) {
+        if let (Some(KillState::Confirming { signal, ref signal_name }), Some(pid)) =
+            (&self.kill_state, self.kill_target_pid)
+        {
+            let name = self.kill_target_name.as_deref().unwrap_or("?");
+            let result = send_signal(pid, *signal);
+            match result {
+                Ok(()) => {
+                    self.status_message = Some(format!(
+                        "Sent {} to {} (pid {})",
+                        signal_name, name, pid
+                    ));
+                }
+                Err(e) => {
+                    self.status_message = Some(format!(
+                        "Failed to send {} to pid {}: {}",
+                        signal_name, pid, e
+                    ));
+                }
+            }
+            self.close_kill();
+        }
+    }
+
     // -- Help --
 
     pub fn open_help(&mut self) {
@@ -1039,6 +1176,18 @@ impl App {
 
     pub fn config_toggle_selected(&mut self) {
         self.column_config.toggle(self.config_selected);
+    }
+}
+
+fn send_signal(pid: i32, signal: i32) -> Result<(), String> {
+    extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    let ret = unsafe { kill(pid, signal) };
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error().to_string())
     }
 }
 

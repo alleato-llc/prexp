@@ -54,6 +54,7 @@ cargo run -p prexp -- --help          # CLI usage
 | `i` | Process info panel (Overview, Resources, Network, Environment) |
 | `r` | Reverse lookup (process view only) |
 | `a` | Toggle show-all (include inaccessible processes) |
+| `K` | Send signal to selected process (signal picker + confirmation) |
 | `g` | Toggle system summary (CPU cores, memory, totals) |
 | `R` | Force refresh |
 | `y` | Copy selected path to clipboard (file view / detail) |

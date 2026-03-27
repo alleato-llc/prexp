@@ -177,6 +177,7 @@ crates/
 | `i` | Process info panel (Tab/Shift+Tab tabs, y copy env, Y copy all env) |
 | `r` | Reverse lookup (process view) |
 | `a` | Toggle show-all (include inaccessible processes) |
+| `K` | Send signal to process (TERM, KILL, HUP, custom) |
 | `g` | Toggle system summary header |
 | `R` | Force refresh |
 | `y` | Copy path to clipboard |

@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use prexp_core::models::ResourceKind;
 
-use crate::tui::app::{self, App, Chart, Column};
+use crate::tui::app::{self, App, Chart, Column, KillState, SIGNALS};
 use crate::tui::theme::{Theme, THEMES};
 
 use super::detail_rect;
@@ -229,6 +229,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         "  t                   Choose color theme",
         "  i                   Process info panel (Tab/Shift+Tab, y/Y copy env)",
         "                      c in Resources tab: configure charts",
+        "  K (shift-k)         Send signal to process",
         "  g                   Toggle system summary",
         "  ?                   Show this help",
         "",
@@ -391,4 +392,127 @@ pub fn draw_chart_config_overlay(frame: &mut Frame, app: &App) {
     let widths = [Constraint::Length(4), Constraint::Min(15)];
     let table = Table::new(rows, widths).block(block);
     frame.render_widget(table, overlay);
+}
+
+// ---------------------------------------------------------------------------
+// Kill signal overlay
+// ---------------------------------------------------------------------------
+
+pub fn draw_kill_overlay(frame: &mut Frame, app: &App) {
+    let t = app.current_theme();
+    let area = frame.area();
+    let name = app.kill_target_name.as_deref().unwrap_or("?");
+    let pid = app.kill_target_pid.unwrap_or(0);
+
+    match &app.kill_state {
+        Some(KillState::Picking { selected }) => {
+            let width = 50u16.min(area.width - 4);
+            let height = (SIGNALS.len() as u16 + 5).min(area.height - 2);
+            let x = area.x + (area.width - width) / 2;
+            let y = area.y + (area.height - height) / 2;
+            let overlay = Rect::new(x, y, width, height);
+
+            frame.render_widget(Clear, overlay);
+
+            let title = format!(" Send signal to {} (pid {}) ", name, pid);
+            let block = Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ratatui::style::Color::Red));
+
+            let mut rows: Vec<Row> = SIGNALS
+                .iter()
+                .enumerate()
+                .map(|(i, sig)| {
+                    let style = if i == *selected {
+                        Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+                    Row::new(vec![
+                        Cell::from(format!("{:>2}", sig.number)),
+                        Cell::from(sig.name),
+                        Cell::from(sig.description),
+                    ])
+                    .style(style)
+                })
+                .collect();
+
+            // Custom option
+            let custom_style = if *selected == SIGNALS.len() {
+                Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            rows.push(
+                Row::new(vec![
+                    Cell::from(" ?"),
+                    Cell::from("Custom"),
+                    Cell::from("Enter a signal number"),
+                ])
+                .style(custom_style),
+            );
+
+            let widths = [
+                Constraint::Length(4),
+                Constraint::Length(10),
+                Constraint::Min(20),
+            ];
+            let table = Table::new(rows, widths).block(block);
+            frame.render_widget(table, overlay);
+        }
+        Some(KillState::CustomInput { input }) => {
+            let width = 45u16.min(area.width - 4);
+            let height = 5u16.min(area.height - 2);
+            let x = area.x + (area.width - width) / 2;
+            let y = area.y + (area.height - height) / 2;
+            let overlay = Rect::new(x, y, width, height);
+
+            frame.render_widget(Clear, overlay);
+
+            let block = Block::default()
+                .title(format!(" Custom signal for {} (pid {}) ", name, pid))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ratatui::style::Color::Red));
+
+            let text = Line::from(vec![
+                Span::raw("  Signal number: "),
+                Span::styled(input.as_str(), Style::default().fg(t.accent)),
+                Span::styled("█", Style::default().fg(t.accent)),
+                Span::styled("  (Enter to confirm, Esc to cancel)", Style::default().fg(t.muted)),
+            ]);
+
+            let paragraph = Paragraph::new(text).block(block);
+            frame.render_widget(paragraph, overlay);
+        }
+        Some(KillState::Confirming { signal, signal_name }) => {
+            let width = 55u16.min(area.width - 4);
+            let height = 5u16.min(area.height - 2);
+            let x = area.x + (area.width - width) / 2;
+            let y = area.y + (area.height - height) / 2;
+            let overlay = Rect::new(x, y, width, height);
+
+            frame.render_widget(Clear, overlay);
+
+            let block = Block::default()
+                .title(" Confirm ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(ratatui::style::Color::Red));
+
+            let text = Line::from(vec![
+                Span::raw(format!(
+                    "  Send {} ({}) to {} (pid {})? ",
+                    signal_name, signal, name, pid
+                )),
+                Span::styled(
+                    "[y/n]",
+                    Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+                ),
+            ]);
+
+            let paragraph = Paragraph::new(text).block(block);
+            frame.render_widget(paragraph, overlay);
+        }
+        None => {}
+    }
 }

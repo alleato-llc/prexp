@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use prexp_core::source::ProcessSource;
 
-use super::app::{App, InputMode, MainView};
+use super::app::{App, InputMode, KillState, MainView};
 
 /// Poll for a crossterm event with the given timeout.
 pub fn poll_event(timeout: Duration) -> Option<Event> {
@@ -18,7 +18,9 @@ pub fn poll_event(timeout: Duration) -> Option<Event> {
 pub fn handle_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
     match app.input_mode {
         InputMode::Normal => {
-            if app.chart_config_open {
+            if app.kill_state.is_some() {
+                handle_kill_key(app, key);
+            } else if app.chart_config_open {
                 handle_chart_config_key(app, key);
             } else if app.info_open {
                 handle_info_key(app, key);
@@ -78,6 +80,7 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
         KeyCode::Char('t') => app.open_theme_picker(),
         KeyCode::Char('s') => app.cycle_sort(),
         KeyCode::Char('S') => app.reverse_sort(),
+        KeyCode::Char('K') => app.open_kill_picker(),
         KeyCode::Char('a') => app.toggle_show_all(),
         KeyCode::Char('y') => {
             if app.main_view == MainView::Files {
@@ -104,6 +107,31 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
             app.status_message = Some(msg);
         }
         _ => {}
+    }
+}
+
+fn handle_kill_key(app: &mut App, key: KeyEvent) {
+    match &app.kill_state {
+        Some(KillState::Picking { .. }) => match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => app.close_kill(),
+            KeyCode::Up | KeyCode::Char('k') => app.kill_pick_up(),
+            KeyCode::Down | KeyCode::Char('j') => app.kill_pick_down(),
+            KeyCode::Enter => app.kill_select(),
+            _ => {}
+        },
+        Some(KillState::CustomInput { .. }) => match key.code {
+            KeyCode::Esc => app.close_kill(),
+            KeyCode::Enter => app.kill_custom_confirm(),
+            KeyCode::Backspace => app.kill_custom_pop(),
+            KeyCode::Char(c) => app.kill_custom_push(c),
+            _ => {}
+        },
+        Some(KillState::Confirming { .. }) => match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => app.kill_confirm(),
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => app.close_kill(),
+            _ => {}
+        },
+        None => {}
     }
 }
 
