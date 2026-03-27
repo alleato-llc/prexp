@@ -113,9 +113,10 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
         lines.push(section_header("CPU % (history)", t));
         let cpu_data: Vec<f64> = history.cpu.iter().copied().collect();
         lines.push(sparkline_line(&cpu_data, t));
+        let cpu_now = history.cpu.back().copied().unwrap_or(0.0);
         if let Some(peak) = history.cpu.iter().cloned().reduce(f64::max) {
             lines.push(Line::from(Span::styled(
-                format!("  peak: {:.1}%", peak),
+                format!("  now: {:.1}%  peak: {:.1}%", cpu_now, peak),
                 Style::default().fg(t.muted),
             )));
         }
@@ -132,9 +133,10 @@ fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::supe
             Vec::new()
         };
         lines.push(sparkline_line(&mem_pcts, t));
+        let mem_now = history.memory.back().copied().unwrap_or(0);
         if let Some(&peak) = history.memory.iter().max() {
             lines.push(Line::from(Span::styled(
-                format!("  peak: {}", app::format_memory(peak)),
+                format!("  now: {}  peak: {}", app::format_memory(mem_now), app::format_memory(peak)),
                 Style::default().fg(t.muted),
             )));
         }
@@ -182,16 +184,17 @@ fn add_chart(
     lines: &mut Vec<Line<'static>>,
     title: &str,
     data: &VecDeque<f64>,
-    fmt_peak: impl Fn(f64) -> String,
+    fmt_val: impl Fn(f64) -> String,
     t: &super::super::theme::Theme,
 ) {
     let data_vec: Vec<f64> = data.iter().copied().collect();
     lines.push(Line::from(""));
     lines.push(section_header(title, t));
     lines.push(sparkline_line(&data_vec, t));
+    let current = data.back().copied().unwrap_or(0.0);
     if let Some(peak) = data.iter().cloned().reduce(f64::max) {
         lines.push(Line::from(Span::styled(
-            format!("  peak: {}", fmt_peak(peak)),
+            format!("  now: {}  peak: {}", fmt_val(current), fmt_val(peak)),
             Style::default().fg(t.muted),
         )));
     }
@@ -204,7 +207,7 @@ fn add_dual_chart(
     data1: &VecDeque<f64>,
     label2: &str,
     data2: &VecDeque<f64>,
-    fmt_peak: impl Fn(f64) -> String,
+    fmt_val: impl Fn(f64) -> String,
     t: &super::super::theme::Theme,
 ) {
     lines.push(Line::from(""));
@@ -212,20 +215,22 @@ fn add_dual_chart(
 
     // Line 1: reads
     let d1: Vec<f64> = data1.iter().copied().collect();
+    let now1 = data1.back().copied().unwrap_or(0.0);
     let peak1 = data1.iter().cloned().reduce(f64::max).unwrap_or(0.0);
     lines.push(Line::from(vec![
         Span::styled(format!("  {} ", label1), Style::default().fg(t.header)),
         sparkline_span(&d1, t),
-        Span::styled(format!("  peak: {}", fmt_peak(peak1)), Style::default().fg(t.muted)),
+        Span::styled(format!("  now: {}  peak: {}", fmt_val(now1), fmt_val(peak1)), Style::default().fg(t.muted)),
     ]));
 
     // Line 2: writes
     let d2: Vec<f64> = data2.iter().copied().collect();
+    let now2 = data2.back().copied().unwrap_or(0.0);
     let peak2 = data2.iter().cloned().reduce(f64::max).unwrap_or(0.0);
     lines.push(Line::from(vec![
         Span::styled(format!("  {} ", label2), Style::default().fg(t.header)),
         sparkline_span(&d2, t),
-        Span::styled(format!("  peak: {}", fmt_peak(peak2)), Style::default().fg(t.muted)),
+        Span::styled(format!("  now: {}  peak: {}", fmt_val(now2), fmt_val(peak2)), Style::default().fg(t.muted)),
     ]));
 }
 
