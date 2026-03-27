@@ -231,6 +231,8 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         "",
         "  DETAIL OVERLAY",
         "  --------------",
+        "  /                     Search resources by path or kind",
+        "  f                     Filter by kind (File/Socket/Pipe/Device)",
         "  h / l / Left / Right  Horizontal scroll",
         "  y                     Copy selected path to clipboard",
         "",

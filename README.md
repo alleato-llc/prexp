@@ -180,6 +180,7 @@ crates/
 | `K` | Send signal to process (TERM, KILL, HUP, custom) |
 | `g` | Toggle system summary header |
 | `R` | Force refresh |
+| `f` | Filter by kind (file view or detail overlay) |
 | `y` | Copy path to clipboard |
 | `h/l` | Horizontal scroll (detail overlay) |
 | `?` | Help legend |

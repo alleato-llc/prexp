@@ -63,9 +63,11 @@ cargo run -p prexp -- --help          # CLI usage
 ### Detail overlay
 | Key | Action |
 |-----|--------|
-| `q` / `Esc` | Close overlay |
+| `q` / `Esc` | Close overlay (clears search first) |
 | `j/k` / arrows | Navigate resources |
 | `h/l` / left/right | Horizontal scroll |
+| `/` | Search resources by path or kind |
+| `f` | Filter by kind (File, Socket, Pipe, Device, Kqueue) |
 | `y` | Copy selected path to clipboard |
 
 ### Theme picker (`t`)
