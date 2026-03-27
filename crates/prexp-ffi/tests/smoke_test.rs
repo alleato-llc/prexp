@@ -145,3 +145,55 @@ fn get_network_connections_for_self() {
     // Just verify it returns without error — test process may have no sockets
     let _ = conns;
 }
+
+#[test]
+#[ignore]
+fn syscall_counter_accuracy() {
+    use std::process::{Command, Stdio};
+    use std::io::{BufRead, BufReader};
+
+    // Spawn a child that does a known number of getpid() syscalls then reports.
+    let mut child = Command::new("python3")
+        .arg("-c")
+        .arg(r#"
+import os, sys
+# Do 50,000 stat() syscalls (each is a real unix syscall, not cached)
+for _ in range(50000):
+    os.stat(".")
+sys.stdout.write("done\n")
+sys.stdout.flush()
+import time
+time.sleep(5)
+"#)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn python3");
+
+    let pid = child.id() as i32;
+
+    // Wait for the child to finish its syscall burst.
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    reader.read_line(&mut line).expect("failed to read from child");
+    assert_eq!(line.trim(), "done");
+
+    // Read syscall counters.
+    let info = prexp_ffi::get_process_info(pid).expect("failed to get process info");
+    let total_syscalls = info.syscalls_mach as i64 + info.syscalls_unix as i64;
+
+    // The child did at least 50,000 stat() calls plus Python startup overhead.
+    // Unix syscalls should be well above 50,000.
+    assert!(
+        info.syscalls_unix > 50_000,
+        "expected >50K unix syscalls, got {} (mach: {}, unix: {}, total: {})",
+        info.syscalls_unix, info.syscalls_mach, info.syscalls_unix, total_syscalls
+    );
+
+    // Sanity: total should be positive and reasonable.
+    assert!(total_syscalls > 50_000, "total syscalls should be >50K, got {}", total_syscalls);
+    assert!(total_syscalls < 100_000_000, "total syscalls should be <100M, got {}", total_syscalls);
+
+    child.kill().ok();
+    child.wait().ok();
+}
