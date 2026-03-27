@@ -28,6 +28,7 @@ pub struct TreeEntry {
 #[derive(Debug, Clone)]
 pub struct FileEntry {
     pub path: String,
+    pub kind: prexp_core::models::ResourceKind,
     pub openers: Vec<FileOpener>,
 }
 
@@ -37,6 +38,51 @@ pub struct FileOpener {
     pub pid: i32,
     pub name: String,
     pub descriptor: i32,
+}
+
+/// Filter for the file list view by resource kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKindFilter {
+    All,
+    File,
+    Socket,
+    Pipe,
+    Device,
+    Kqueue,
+}
+
+impl FileKindFilter {
+    pub const OPTIONS: &'static [FileKindFilter] = &[
+        FileKindFilter::All,
+        FileKindFilter::File,
+        FileKindFilter::Socket,
+        FileKindFilter::Pipe,
+        FileKindFilter::Device,
+        FileKindFilter::Kqueue,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FileKindFilter::All => "All",
+            FileKindFilter::File => "File",
+            FileKindFilter::Socket => "Socket",
+            FileKindFilter::Pipe => "Pipe",
+            FileKindFilter::Device => "Device",
+            FileKindFilter::Kqueue => "Kqueue",
+        }
+    }
+
+    pub fn matches(self, kind: &prexp_core::models::ResourceKind) -> bool {
+        use prexp_core::models::ResourceKind;
+        match self {
+            FileKindFilter::All => true,
+            FileKindFilter::File => *kind == ResourceKind::File,
+            FileKindFilter::Socket => *kind == ResourceKind::Socket,
+            FileKindFilter::Pipe => *kind == ResourceKind::Pipe,
+            FileKindFilter::Device => *kind == ResourceKind::Device,
+            FileKindFilter::Kqueue => *kind == ResourceKind::Kqueue,
+        }
+    }
 }
 
 /// A configurable chart in the info panel Resources tab.
@@ -349,6 +395,9 @@ pub struct App {
     pub filtered_file_indices: Vec<usize>,
     pub file_selected_index: usize,
     pub file_anchor: Option<String>,
+    pub file_kind_filter: FileKindFilter,
+    pub file_kind_picker_open: bool,
+    pub file_kind_picker_selected: usize,
 
     // View state
     pub main_view: MainView,
@@ -434,6 +483,9 @@ impl App {
             filtered_file_indices: Vec::new(),
             file_selected_index: 0,
             file_anchor: None,
+            file_kind_filter: FileKindFilter::All,
+            file_kind_picker_open: false,
+            file_kind_picker_selected: 0,
             main_view: MainView::Processes,
             detail_open: false,
             input_mode: InputMode::Normal,
@@ -649,7 +701,9 @@ impl App {
     }
 
     fn rebuild_file_list(&mut self) {
-        let mut path_map: HashMap<String, Vec<FileOpener>> = HashMap::new();
+        use prexp_core::models::ResourceKind;
+
+        let mut path_map: HashMap<String, (ResourceKind, Vec<FileOpener>)> = HashMap::new();
 
         for snap in &self.snapshots {
             if !self.show_all && !snap.accessible {
@@ -657,21 +711,19 @@ impl App {
             }
             for res in &snap.resources {
                 if let Some(path) = &res.path {
-                    path_map
-                        .entry(path.clone())
-                        .or_default()
-                        .push(FileOpener {
-                            pid: snap.pid,
-                            name: snap.name.clone(),
-                            descriptor: res.descriptor,
-                        });
+                    let entry = path_map.entry(path.clone()).or_insert_with(|| (res.kind.clone(), Vec::new()));
+                    entry.1.push(FileOpener {
+                        pid: snap.pid,
+                        name: snap.name.clone(),
+                        descriptor: res.descriptor,
+                    });
                 }
             }
         }
 
         let mut entries: Vec<FileEntry> = path_map
             .into_iter()
-            .map(|(path, openers)| FileEntry { path, openers })
+            .map(|(path, (kind, openers))| FileEntry { path, kind, openers })
             .collect();
 
         let dir = self.file_sort_dir;
@@ -699,18 +751,19 @@ impl App {
         }
         self.file_entries = entries;
 
-        if !self.search_text.is_empty() && self.main_view == MainView::Files {
-            let query = self.search_text.to_lowercase();
-            self.filtered_file_indices = self
-                .file_entries
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| e.path.to_lowercase().contains(&query))
-                .map(|(i, _)| i)
-                .collect();
-        } else {
-            self.filtered_file_indices = (0..self.file_entries.len()).collect();
-        }
+        // Apply kind filter + search filter.
+        let kind_filter = self.file_kind_filter;
+        let search_active = !self.search_text.is_empty() && self.main_view == MainView::Files;
+        let query = self.search_text.to_lowercase();
+
+        self.filtered_file_indices = self
+            .file_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| kind_filter.matches(&e.kind))
+            .filter(|(_, e)| !search_active || e.path.to_lowercase().contains(&query))
+            .map(|(i, _)| i)
+            .collect();
 
         if let Some(ref anchor_path) = self.file_anchor {
             if let Some(pos) = self
@@ -902,6 +955,40 @@ impl App {
 
     pub fn current_theme(&self) -> &super::theme::Theme {
         &super::theme::THEMES[self.theme_index]
+    }
+
+    // -- File kind filter --
+
+    pub fn open_kind_picker(&mut self) {
+        self.file_kind_picker_open = true;
+        self.file_kind_picker_selected = FileKindFilter::OPTIONS
+            .iter()
+            .position(|&f| f == self.file_kind_filter)
+            .unwrap_or(0);
+    }
+
+    pub fn close_kind_picker(&mut self) {
+        self.file_kind_picker_open = false;
+    }
+
+    pub fn kind_picker_up(&mut self) {
+        if self.file_kind_picker_selected > 0 {
+            self.file_kind_picker_selected -= 1;
+        }
+    }
+
+    pub fn kind_picker_down(&mut self) {
+        if self.file_kind_picker_selected < FileKindFilter::OPTIONS.len() - 1 {
+            self.file_kind_picker_selected += 1;
+        }
+    }
+
+    pub fn kind_picker_select(&mut self) {
+        self.file_kind_filter = FileKindFilter::OPTIONS[self.file_kind_picker_selected];
+        self.file_kind_picker_open = false;
+        self.rebuild_file_list();
+        let label = self.file_kind_filter.label();
+        self.status_message = Some(format!("Filter: {}", label));
     }
 
     // -- Chart config --

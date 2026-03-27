@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use prexp_core::models::ResourceKind;
 
-use crate::tui::app::{self, App, Chart, Column, KillState, SIGNALS};
+use crate::tui::app::{self, App, Chart, Column, FileKindFilter, KillState, SIGNALS};
 use crate::tui::theme::{Theme, THEMES};
 
 use super::detail_rect;
@@ -208,6 +208,7 @@ pub fn draw_help(frame: &mut Frame, app: &App) {
         "  -----",
         "  v                   Toggle process / file view",
         "  r                   Reverse lookup by file path",
+        "  f                   Filter files by kind (file view)",
         "  a                   Toggle show-all processes",
         "  R                   Force refresh",
         "",
@@ -515,4 +516,43 @@ pub fn draw_kill_overlay(frame: &mut Frame, app: &App) {
         }
         None => {}
     }
+}
+
+// ---------------------------------------------------------------------------
+// File kind filter picker
+// ---------------------------------------------------------------------------
+
+pub fn draw_kind_picker(frame: &mut Frame, app: &App) {
+    let t = app.current_theme();
+    let area = frame.area();
+    let width = 30u16.min(area.width - 4);
+    let height = (FileKindFilter::OPTIONS.len() as u16 + 4).min(area.height - 2);
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+    let overlay = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, overlay);
+
+    let block = Block::default()
+        .title(" Filter by kind [Enter: select] ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(t.border_file));
+
+    let rows: Vec<Row> = FileKindFilter::OPTIONS
+        .iter()
+        .enumerate()
+        .map(|(i, kind)| {
+            let marker = if *kind == app.file_kind_filter { "▶" } else { " " };
+            let style = if i == app.file_kind_picker_selected {
+                Style::default().bg(t.highlight_bg).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![Cell::from(marker), Cell::from(kind.label())]).style(style)
+        })
+        .collect();
+
+    let widths = [Constraint::Length(2), Constraint::Min(15)];
+    let table = Table::new(rows, widths).block(block);
+    frame.render_widget(table, overlay);
 }

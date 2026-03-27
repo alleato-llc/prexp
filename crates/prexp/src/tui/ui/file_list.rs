@@ -4,7 +4,7 @@ use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, Cell, Clear, Row, Table, TableState};
 use ratatui::Frame;
 
-use crate::tui::app::{App, FileSortField, InputMode};
+use crate::tui::app::{App, FileKindFilter, FileSortField, InputMode};
 
 use super::detail_rect;
 
@@ -25,9 +25,15 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             sort_label
         )
     } else {
+        let kind_label = if app.file_kind_filter != FileKindFilter::All {
+            format!(" [{}]", app.file_kind_filter.label())
+        } else {
+            String::new()
+        };
         format!(
-            " prexp — {} open files{} ",
+            " prexp — {} open files{}{} ",
             app.filtered_file_indices.len(),
+            kind_label,
             sort_label
         )
     };

@@ -40,6 +40,8 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
     if app.kill_state.is_some() {
         overlays::draw_kill_overlay(frame, app);
+    } else if app.file_kind_picker_open {
+        overlays::draw_kind_picker(frame, app);
     } else if app.chart_config_open {
         overlays::draw_chart_config_overlay(frame, app);
     } else if app.info_open {
@@ -117,6 +119,8 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                 ];
 
                 if app.main_view == MainView::Files {
+                    spans.push(Span::styled("f", key_style));
+                    spans.push(Span::raw(" Filter  "));
                     spans.push(Span::styled("y", key_style));
                     spans.push(Span::raw(" Copy  "));
                 }

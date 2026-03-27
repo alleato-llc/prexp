@@ -20,6 +20,8 @@ pub fn handle_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
         InputMode::Normal => {
             if app.kill_state.is_some() {
                 handle_kill_key(app, key);
+            } else if app.file_kind_picker_open {
+                handle_kind_picker_key(app, key);
             } else if app.chart_config_open {
                 handle_chart_config_key(app, key);
             } else if app.info_open {
@@ -88,6 +90,21 @@ fn handle_main_key(app: &mut App, key: KeyEvent, source: &dyn ProcessSource) {
                 app.status_message = Some(msg);
             }
         }
+        KeyCode::Char('f') => {
+            if app.main_view == MainView::Files {
+                app.open_kind_picker();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_kind_picker_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('f') => app.close_kind_picker(),
+        KeyCode::Up | KeyCode::Char('k') => app.kind_picker_up(),
+        KeyCode::Down | KeyCode::Char('j') => app.kind_picker_down(),
+        KeyCode::Enter => app.kind_picker_select(),
         _ => {}
     }
 }
