@@ -19,7 +19,8 @@ pub struct CpuTicks {
     pub nice: u32,
 }
 
-/// System memory information.
+/// System memory information (bytes). `swap_*` are the swap file's totals
+/// (`0` when there is no swap, or where it can't be read).
 #[derive(Debug, Clone)]
 pub struct MemoryInfo {
     pub total: u64,
@@ -27,6 +28,8 @@ pub struct MemoryInfo {
     pub free: u64,
     pub wired: u64,
     pub compressed: u64,
+    pub swap_total: u64,
+    pub swap_used: u64,
 }
 
 /// Cumulative system-wide network byte counters (monotonic; diff two reads for
@@ -123,13 +126,41 @@ pub fn get_memory_info() -> Result<MemoryInfo, FfiError> {
     let active = vm_info.active_count as u64 * page_size;
     let used = active + wired + compressed;
 
+    let (swap_used, swap_total) = read_swap_usage();
+
     Ok(MemoryInfo {
         total,
         used,
         free: total.saturating_sub(used),
         wired,
         compressed,
+        swap_total,
+        swap_used,
     })
+}
+
+/// The swap file's `(used, total)` bytes from `sysctl(vm.swapusage)`, or `(0, 0)`
+/// when swap is off or the read fails (best-effort — swap detail must never fail
+/// a memory read).
+fn read_swap_usage() -> (u64, u64) {
+    let Ok(name) = std::ffi::CString::new("vm.swapusage") else {
+        return (0, 0);
+    };
+    let mut usage = raw::XswUsage::default();
+    let mut len = mem::size_of::<raw::XswUsage>();
+    let ret = unsafe {
+        raw::sysctlbyname(
+            name.as_ptr(),
+            &mut usage as *mut _ as *mut c_void,
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    if ret != 0 {
+        return (0, 0);
+    }
+    (usage.xsu_used, usage.xsu_total)
 }
 
 fn get_total_memory() -> Result<u64, FfiError> {
@@ -641,6 +672,17 @@ mod perf_level_tests {
         assert!(
             load.iter().all(|&l| l >= 0.0 && l.is_finite()),
             "load averages must be non-negative and finite, got {load:?}"
+        );
+    }
+
+    #[test]
+    fn memory_swap_is_consistent() {
+        let m = get_memory_info().expect("read memory");
+        assert!(
+            m.swap_used <= m.swap_total,
+            "swap used {} exceeds total {}",
+            m.swap_used,
+            m.swap_total
         );
     }
 

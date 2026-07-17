@@ -7,7 +7,8 @@ pub struct CpuTicks {
     pub nice: u64,
 }
 
-/// System memory information.
+/// System memory information (bytes). `swap_*` are the swap file's totals
+/// (`0` when there is no swap).
 #[derive(Debug, Clone)]
 pub struct MemoryInfo {
     pub total: u64,
@@ -15,6 +16,8 @@ pub struct MemoryInfo {
     pub free: u64,
     pub wired: u64,
     pub compressed: u64,
+    pub swap_total: u64,
+    pub swap_used: u64,
 }
 
 /// Cumulative system-wide network byte counters (monotonic; diff two reads for

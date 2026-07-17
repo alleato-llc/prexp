@@ -108,6 +108,8 @@ impl ProcessSource for MacosProcessSource {
             free: m.free,
             wired: m.wired,
             compressed: m.compressed,
+            swap_total: m.swap_total,
+            swap_used: m.swap_used,
         })
     }
 

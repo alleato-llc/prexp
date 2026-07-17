@@ -98,12 +98,17 @@ impl ProcessSource for LinuxProcessSource {
         let available = mem.mem_available.unwrap_or(mem.mem_free);
         let used = total.saturating_sub(available);
 
+        let swap_total = mem.swap_total;
+        let swap_used = swap_total.saturating_sub(mem.swap_free);
+
         Ok(MemoryInfo {
             total,
             used,
             free: available,
             wired: 0,
             compressed: 0,
+            swap_total,
+            swap_used,
         })
     }
 

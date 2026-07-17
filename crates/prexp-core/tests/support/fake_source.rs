@@ -50,7 +50,15 @@ impl ProcessSource for FakeProcessSource {
     }
 
     fn memory_info(&self) -> Result<MemoryInfo, PrexpError> {
-        Ok(MemoryInfo { total: 0, used: 0, free: 0, wired: 0, compressed: 0 })
+        Ok(MemoryInfo {
+            total: 0,
+            used: 0,
+            free: 0,
+            wired: 0,
+            compressed: 0,
+            swap_total: 0,
+            swap_used: 0,
+        })
     }
 
     fn network_counters(&self) -> Result<NetworkCounters, PrexpError> {

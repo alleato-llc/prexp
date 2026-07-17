@@ -506,6 +506,18 @@ pub struct VmStatistics64 {
     pub swapped_count: u64,
 }
 
+/// Matches `struct xsw_usage` (the `vm.swapusage` sysctl payload): swap file
+/// totals in bytes. `xsu_encrypted` is a `boolean_t` (a C `int`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct XswUsage {
+    pub xsu_total: u64,
+    pub xsu_avail: u64,
+    pub xsu_used: u64,
+    pub xsu_pagesize: u32,
+    pub xsu_encrypted: i32,
+}
+
 /// Matches `struct proc_vnodepathinfo`.
 /// Returned by proc_pidinfo(PROC_PIDVNODEPATHINFO).
 #[repr(C)]
