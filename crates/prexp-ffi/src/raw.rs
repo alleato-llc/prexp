@@ -557,6 +557,10 @@ extern "C" {
         newp: *const c_void,
         newlen: usize,
     ) -> c_int;
+
+    /// `getloadavg(3)`: fills up to `nelem` load averages (1, 5, 15-minute) into
+    /// `loadavg`; returns the number stored, or `-1` on failure.
+    pub fn getloadavg(loadavg: *mut f64, nelem: c_int) -> c_int;
 }
 
 // ---------------------------------------------------------------------------

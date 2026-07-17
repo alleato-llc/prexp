@@ -131,6 +131,10 @@ impl ProcessSource for MacosProcessSource {
         prexp_ffi::get_boot_time_secs().map_err(ffi_to_prexp)
     }
 
+    fn system_load_average(&self) -> Result<[f64; 3], PrexpError> {
+        prexp_ffi::get_load_average().map_err(ffi_to_prexp)
+    }
+
     fn cpu_perf_levels(&self) -> Result<Vec<CpuKind>, PrexpError> {
         let levels = prexp_ffi::get_cpu_perf_levels().map_err(ffi_to_prexp)?;
         Ok(levels

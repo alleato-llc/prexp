@@ -50,6 +50,14 @@ pub trait ProcessSource {
         ))
     }
 
+    /// The system load average — the 1, 5, and 15-minute run-queue averages. The
+    /// default is unsupported; each platform backend overrides it.
+    fn system_load_average(&self) -> Result<[f64; 3], PrexpError> {
+        Err(PrexpError::Backend(
+            "load average not available on this platform".into(),
+        ))
+    }
+
     /// Get detailed process information for the info panel.
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError>;
 }

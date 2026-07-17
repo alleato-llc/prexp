@@ -130,6 +130,17 @@ impl ProcessSource for LinuxProcessSource {
             .map_err(|e| PrexpError::Backend(format!("boot time read failed: {e}")))
     }
 
+    fn system_load_average(&self) -> Result<[f64; 3], PrexpError> {
+        let s = std::fs::read_to_string("/proc/loadavg")
+            .map_err(|e| PrexpError::Backend(format!("loadavg read failed: {e}")))?;
+        let mut it = s.split_whitespace();
+        let mut next = || it.next().and_then(|v| v.parse::<f64>().ok());
+        match (next(), next(), next()) {
+            (Some(a), Some(b), Some(c)) => Ok([a, b, c]),
+            _ => Err(PrexpError::Backend("malformed /proc/loadavg".into())),
+        }
+    }
+
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError> {
         let proc = Process::new(pid)
             .map_err(|e| proc_err_to_prexp(e, pid))?;

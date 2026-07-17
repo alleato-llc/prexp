@@ -496,9 +496,33 @@ pub fn get_boot_time_secs() -> Result<u64, FfiError> {
     Ok(tv.tv_sec as u64)
 }
 
+/// The system load average — the 1, 5, and 15-minute run-queue averages — via
+/// `getloadavg(3)`.
+pub fn get_load_average() -> Result<[f64; 3], FfiError> {
+    let mut out = [0.0f64; 3];
+    let n = unsafe { raw::getloadavg(out.as_mut_ptr(), 3) };
+    if n != 3 {
+        return Err(FfiError::SystemError {
+            function: "getloadavg",
+            pid: 0,
+            reason: "failed to read load average".into(),
+        });
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod perf_level_tests {
     use super::*;
+
+    #[test]
+    fn load_average_is_non_negative() {
+        let load = get_load_average().expect("read load average");
+        assert!(
+            load.iter().all(|&l| l >= 0.0 && l.is_finite()),
+            "load averages must be non-negative and finite, got {load:?}"
+        );
+    }
 
     #[test]
     fn boot_time_is_in_the_past() {
