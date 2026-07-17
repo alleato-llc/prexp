@@ -42,3 +42,18 @@ pub enum CpuKind {
     Efficiency,
     Unknown,
 }
+
+/// The primary battery's state. Absent (an `Err` from `system_battery`) on a
+/// machine with no battery.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BatteryInfo {
+    /// Charge as a 0..=100 percentage.
+    pub percent: f64,
+    /// Whether the battery is currently charging.
+    pub charging: bool,
+    /// Estimated minutes to empty while discharging, or `-1` when charging /
+    /// still calculating.
+    pub time_to_empty_min: i32,
+    /// Estimated minutes to a full charge while charging, or `-1` otherwise.
+    pub time_to_full_min: i32,
+}

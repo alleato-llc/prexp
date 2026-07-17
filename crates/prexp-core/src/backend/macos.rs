@@ -135,6 +135,16 @@ impl ProcessSource for MacosProcessSource {
         prexp_ffi::get_load_average().map_err(ffi_to_prexp)
     }
 
+    fn system_battery(&self) -> Result<crate::system::BatteryInfo, PrexpError> {
+        let b = prexp_ffi::get_battery_info().map_err(ffi_to_prexp)?;
+        Ok(crate::system::BatteryInfo {
+            percent: b.percent,
+            charging: b.charging,
+            time_to_empty_min: b.time_to_empty_min,
+            time_to_full_min: b.time_to_full_min,
+        })
+    }
+
     fn cpu_perf_levels(&self) -> Result<Vec<CpuKind>, PrexpError> {
         let levels = prexp_ffi::get_cpu_perf_levels().map_err(ffi_to_prexp)?;
         Ok(levels

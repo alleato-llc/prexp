@@ -642,10 +642,19 @@ pub const KIO_MASTER_PORT_DEFAULT: u32 = 0;
 pub const KCF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
 /// `kCFNumberSInt64Type` — the counters are 64-bit.
 pub const KCF_NUMBER_SINT64_TYPE: i64 = 4;
+/// `kCFNumberIntType` — the power-source values (capacity, minutes) are `int`.
+pub const KCF_NUMBER_INT_TYPE: i64 = 9;
 
 #[link(name = "IOKit", kind = "framework")]
 extern "C" {
     pub fn IOServiceMatching(name: *const c_char) -> *mut c_void;
+    /// A snapshot blob of the system's power sources (retained; `CFRelease` it).
+    pub fn IOPSCopyPowerSourcesInfo() -> CfTypeRef;
+    /// The power sources in a blob, as a `CFArray` (retained; `CFRelease` it).
+    pub fn IOPSCopyPowerSourcesList(blob: CfTypeRef) -> CfTypeRef;
+    /// A power source's description `CFDictionary` (owned by the blob — do not
+    /// release).
+    pub fn IOPSGetPowerSourceDescription(blob: CfTypeRef, ps: *const c_void) -> CfTypeRef;
     pub fn IOServiceGetMatchingServices(
         main_port: u32,
         matching: *const c_void,
@@ -678,6 +687,12 @@ extern "C" {
     ) -> CfStringRef;
     pub fn CFDictionaryGetValue(the_dict: CfTypeRef, key: *const c_void) -> *const c_void;
     pub fn CFNumberGetValue(number: CfTypeRef, the_type: i64, value_ptr: *mut c_void) -> u8;
+    /// `CFArray` element count (`CFIndex` is a signed `long`).
+    pub fn CFArrayGetCount(array: CfTypeRef) -> isize;
+    /// `CFArray` element at `index` (borrowed — do not release).
+    pub fn CFArrayGetValueAtIndex(array: CfTypeRef, index: isize) -> *const c_void;
+    /// A `CFBoolean`'s value (non-zero = true).
+    pub fn CFBooleanGetValue(boolean: CfTypeRef) -> u8;
     /// `CFData` byte length (`CFIndex` is a signed `long`).
     pub fn CFDataGetLength(data: CfTypeRef) -> isize;
     /// Pointer to a `CFData`'s bytes (valid while the ref is retained).

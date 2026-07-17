@@ -141,6 +141,53 @@ impl ProcessSource for LinuxProcessSource {
         }
     }
 
+    fn system_battery(&self) -> Result<crate::system::BatteryInfo, PrexpError> {
+        // The first /sys/class/power_supply/BAT* (a desktop has none).
+        let base = std::path::Path::new("/sys/class/power_supply");
+        let dir = std::fs::read_dir(base)
+            .map_err(|e| PrexpError::Backend(format!("power_supply read failed: {e}")))?
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("BAT"))
+            })
+            .ok_or_else(|| PrexpError::Backend("no battery".into()))?;
+        let read = |name: &str| {
+            std::fs::read_to_string(dir.join(name))
+                .ok()
+                .map(|s| s.trim().to_string())
+        };
+        let num = |name: &str| read(name).and_then(|s| s.parse::<f64>().ok());
+
+        let percent = num("capacity")
+            .ok_or_else(|| PrexpError::Backend("no battery capacity".into()))?;
+        let status = read("status").unwrap_or_default();
+        let charging = status == "Charging";
+        // Time estimates from energy_now / power_now (µWh / µW → minutes), when
+        // exposed; else -1.
+        let power = num("power_now").filter(|p| *p > 0.0);
+        let mins = |amount: Option<f64>| match (amount, power) {
+            (Some(a), Some(p)) => ((a / p) * 60.0) as i32,
+            _ => -1,
+        };
+        let (time_to_empty_min, time_to_full_min) = if charging {
+            let remaining = num("energy_full").zip(num("energy_now")).map(|(f, e)| f - e);
+            (-1, mins(remaining))
+        } else if status == "Discharging" {
+            (mins(num("energy_now")), -1)
+        } else {
+            (-1, -1)
+        };
+        Ok(crate::system::BatteryInfo {
+            percent: percent.clamp(0.0, 100.0),
+            charging,
+            time_to_empty_min,
+            time_to_full_min,
+        })
+    }
+
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError> {
         let proc = Process::new(pid)
             .map_err(|e| proc_err_to_prexp(e, pid))?;

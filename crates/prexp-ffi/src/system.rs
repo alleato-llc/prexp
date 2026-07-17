@@ -511,9 +511,129 @@ pub fn get_load_average() -> Result<[f64; 3], FfiError> {
     Ok(out)
 }
 
+/// A battery reading from IOKit's power sources.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BatteryInfo {
+    /// Charge as a 0..=100 percentage.
+    pub percent: f64,
+    /// Whether the battery is currently charging.
+    pub charging: bool,
+    /// Estimated minutes to empty while discharging, or `-1` when charging /
+    /// still calculating.
+    pub time_to_empty_min: i32,
+    /// Estimated minutes to a full charge while charging, or `-1` otherwise.
+    pub time_to_full_min: i32,
+}
+
+/// The primary battery's state via IOKit power sources
+/// (`IOPSCopyPowerSourcesInfo`). `Err` when the machine has no battery (a
+/// desktop) — the power-source list is empty.
+pub fn get_battery_info() -> Result<BatteryInfo, FfiError> {
+    let no_battery = || FfiError::SystemError {
+        function: "IOPSGetPowerSourceDescription",
+        pid: 0,
+        reason: "no battery power source".into(),
+    };
+
+    let blob = unsafe { raw::IOPSCopyPowerSourcesInfo() };
+    if blob.is_null() {
+        return Err(no_battery());
+    }
+    let list = unsafe { raw::IOPSCopyPowerSourcesList(blob) };
+    if list.is_null() {
+        cf_release(blob);
+        return Err(no_battery());
+    }
+
+    let count = unsafe { raw::CFArrayGetCount(list) };
+    let mut found: Option<BatteryInfo> = None;
+    for i in 0..count {
+        // The source handle and its description dictionary are borrowed from the
+        // blob — do not release them.
+        let ps = unsafe { raw::CFArrayGetValueAtIndex(list, i) };
+        if ps.is_null() {
+            continue;
+        }
+        let desc = unsafe { raw::IOPSGetPowerSourceDescription(blob, ps) };
+        if desc.is_null() {
+            continue;
+        }
+        let (Some(cur), Some(max)) = (
+            cf_dict_i32(desc, "Current Capacity"),
+            cf_dict_i32(desc, "Max Capacity"),
+        ) else {
+            continue;
+        };
+        if max <= 0 {
+            continue;
+        }
+        found = Some(BatteryInfo {
+            percent: (cur as f64 * 100.0 / max as f64).clamp(0.0, 100.0),
+            charging: cf_dict_bool(desc, "Is Charging").unwrap_or(false),
+            time_to_empty_min: cf_dict_i32(desc, "Time to Empty").unwrap_or(-1),
+            time_to_full_min: cf_dict_i32(desc, "Time to Full Charge").unwrap_or(-1),
+        });
+        break;
+    }
+
+    cf_release(list);
+    cf_release(blob);
+    found.ok_or_else(no_battery)
+}
+
+/// Read an `int` value out of a CF dictionary by string key, or `None`.
+fn cf_dict_i32(dict: raw::CfTypeRef, key: &str) -> Option<i32> {
+    let k = cfstr(key);
+    if k.is_null() {
+        return None;
+    }
+    // `CFDictionaryGetValue` returns a borrowed value — do not release it.
+    let val = unsafe { raw::CFDictionaryGetValue(dict, k) };
+    cf_release(k);
+    if val.is_null() {
+        return None;
+    }
+    let mut out: i32 = 0;
+    let ok = unsafe {
+        raw::CFNumberGetValue(
+            val,
+            raw::KCF_NUMBER_INT_TYPE,
+            &mut out as *mut i32 as *mut c_void,
+        )
+    };
+    (ok != 0).then_some(out)
+}
+
+/// Read a `CFBoolean` value out of a CF dictionary by string key, or `None`.
+fn cf_dict_bool(dict: raw::CfTypeRef, key: &str) -> Option<bool> {
+    let k = cfstr(key);
+    if k.is_null() {
+        return None;
+    }
+    let val = unsafe { raw::CFDictionaryGetValue(dict, k) };
+    cf_release(k);
+    if val.is_null() {
+        return None;
+    }
+    Some(unsafe { raw::CFBooleanGetValue(val) } != 0)
+}
+
 #[cfg(test)]
 mod perf_level_tests {
     use super::*;
+
+    #[test]
+    fn battery_reads_or_reports_absent() {
+        // On a laptop this returns a sane 0..=100 percentage; on a desktop it
+        // errors (no battery). Either is a pass — just never a bogus percentage.
+        match get_battery_info() {
+            Ok(b) => assert!(
+                (0.0..=100.0).contains(&b.percent),
+                "battery percent out of range: {b:?}"
+            ),
+            Err(_) => {}
+        }
+    }
 
     #[test]
     fn load_average_is_non_negative() {

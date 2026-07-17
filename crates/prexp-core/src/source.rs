@@ -58,6 +58,14 @@ pub trait ProcessSource {
         ))
     }
 
+    /// The primary battery's state, or an error when the machine has no battery.
+    /// The default is unsupported; each platform backend overrides it.
+    fn system_battery(&self) -> Result<crate::system::BatteryInfo, PrexpError> {
+        Err(PrexpError::Backend(
+            "battery not available on this platform".into(),
+        ))
+    }
+
     /// Get detailed process information for the info panel.
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError>;
 }
