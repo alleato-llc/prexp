@@ -10,6 +10,17 @@ pub trait ProcessSource {
     /// Snapshot all visible processes and their open file descriptors.
     fn snapshot_all(&self) -> Result<Vec<ProcessSnapshot>, PrexpError>;
 
+    /// A lightweight summary of every visible process — name, cumulative CPU
+    /// time, and physical memory — **without** enumerating file descriptors, so
+    /// it is cheap enough to poll the whole table on an interval (e.g. a
+    /// top-processes widget). The default is unsupported; each backend overrides
+    /// it.
+    fn process_summaries(&self) -> Result<Vec<crate::models::ProcessSummary>, PrexpError> {
+        Err(PrexpError::Backend(
+            "process summaries not available on this platform".into(),
+        ))
+    }
+
     /// Snapshot a single process by PID.
     fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, PrexpError>;
 

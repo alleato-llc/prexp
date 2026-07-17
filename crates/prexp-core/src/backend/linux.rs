@@ -6,7 +6,7 @@ use procfs::{Current, CurrentSI};
 use crate::error::PrexpError;
 use crate::models::{
     DiskIo, NetworkConnection, OpenResource, ProcessActivity, ProcessDetail, ProcessMemory,
-    ProcessSnapshot, ProcessState, ResourceKind,
+    ProcessSnapshot, ProcessState, ProcessSummary, ResourceKind,
 };
 use crate::source::ProcessSource;
 use crate::system::{CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
@@ -48,6 +48,31 @@ impl ProcessSource for LinuxProcessSource {
         let proc = Process::new(pid)
             .map_err(|e| proc_err_to_prexp(e, pid))?;
         snapshot_process(&proc)
+    }
+
+    fn process_summaries(&self) -> Result<Vec<ProcessSummary>, PrexpError> {
+        let all = procfs::process::all_processes()
+            .map_err(|e| PrexpError::Backend(format!("failed to list processes: {}", e)))?;
+        let ticks_per_sec = procfs::ticks_per_second() as u64;
+        let mut out = Vec::new();
+        for proc in all.flatten() {
+            // Just the stat file — no fd enumeration. Skip any that vanish.
+            let Ok(stat) = proc.stat() else {
+                continue;
+            };
+            let cpu_time_ns = if ticks_per_sec > 0 {
+                ((stat.utime + stat.stime) * 1_000_000_000) / ticks_per_sec
+            } else {
+                0
+            };
+            out.push(ProcessSummary {
+                pid: proc.pid(),
+                name: stat.comm.clone(),
+                cpu_time_ns,
+                memory_phys: stat.rss as u64 * page_size(),
+            });
+        }
+        Ok(out)
     }
 
     fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, PrexpError> {

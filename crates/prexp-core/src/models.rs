@@ -113,6 +113,21 @@ pub struct ProcessSnapshot {
     pub resources: Vec<OpenResource>,
 }
 
+/// A lightweight per-process summary — name plus the fields needed to rank
+/// processes by resource use (cumulative CPU time and physical memory). Unlike
+/// [`ProcessSnapshot`] it does **not** enumerate open file descriptors, so it is
+/// cheap enough to sample the whole process table on an interval.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcessSummary {
+    pub pid: i32,
+    pub name: String,
+    /// Cumulative CPU time (user + system) in nanoseconds. Diff two reads over the
+    /// elapsed interval for a CPU%.
+    pub cpu_time_ns: u64,
+    /// Physical footprint (private memory) in bytes.
+    pub memory_phys: u64,
+}
+
 /// A single open file descriptor or resource.
 #[derive(Debug, Clone, Serialize)]
 pub struct OpenResource {

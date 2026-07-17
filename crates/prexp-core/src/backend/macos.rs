@@ -1,7 +1,7 @@
 use prexp_ffi::{FdDetail, FdInfo, FfiError};
 
 use crate::error::PrexpError;
-use crate::models::{DiskIo, NetworkConnection, OpenResource, ProcessActivity, ProcessDetail, ProcessMemory, ProcessSnapshot, ProcessState, ResourceKind};
+use crate::models::{DiskIo, NetworkConnection, OpenResource, ProcessActivity, ProcessDetail, ProcessMemory, ProcessSnapshot, ProcessState, ProcessSummary, ResourceKind};
 use crate::source::ProcessSource;
 use crate::system::{CpuKind, CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
 
@@ -32,6 +32,24 @@ impl ProcessSource for MacosProcessSource {
         }
 
         Ok(snapshots)
+    }
+
+    fn process_summaries(&self) -> Result<Vec<ProcessSummary>, PrexpError> {
+        let pids = prexp_ffi::list_all_pids().map_err(ffi_to_prexp)?;
+        let mut out = Vec::with_capacity(pids.len());
+        for pid in pids {
+            // No file-descriptor enumeration (unlike `snapshot_pid`); just the
+            // process-info call. Skip any that exit or deny access meanwhile.
+            if let Ok(info) = prexp_ffi::get_process_info(pid) {
+                out.push(ProcessSummary {
+                    pid,
+                    name: info.name,
+                    cpu_time_ns: info.cpu_time_ns,
+                    memory_phys: info.memory_phys,
+                });
+            }
+        }
+        Ok(out)
     }
 
     fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, PrexpError> {
