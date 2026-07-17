@@ -39,4 +39,18 @@ mod tests {
             "path is absolute: {path}"
         );
     }
+
+    #[test]
+    fn kill_process_signal_zero_probes_existence() {
+        // Signal 0 sends nothing — it just checks the target exists and is ours,
+        // so we can test the plumbing without terminating anything.
+        let source = NativeSource;
+        let me = std::process::id() as i32;
+        assert!(source.kill_process(me, 0).is_ok(), "the test process exists");
+        // A pid that (almost certainly) isn't running fails.
+        assert!(
+            source.kill_process(0x7FFF_FF00, 0).is_err(),
+            "a bogus pid has no process to signal"
+        );
+    }
 }

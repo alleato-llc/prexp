@@ -2,6 +2,13 @@ use crate::error::PrexpError;
 use crate::models::{ProcessDetail, ProcessSnapshot};
 use crate::system::{CpuKind, CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
 
+extern "C" {
+    /// POSIX `kill(2)`, provided by libc on both macOS and Linux (`pid_t` and
+    /// `int` are both `i32` on the platforms we target).
+    #[link_name = "kill"]
+    fn libc_kill(pid: i32, sig: i32) -> i32;
+}
+
 /// Platform-agnostic trait for querying processes and system metrics.
 ///
 /// Implementations exist for macOS (via libproc FFI) and Linux (via procfs).
@@ -31,6 +38,22 @@ pub trait ProcessSource {
         Err(PrexpError::Backend(
             "process path not available on this platform".into(),
         ))
+    }
+
+    /// Send signal `sig` to process `pid` (15 = `SIGTERM`, 9 = `SIGKILL`). POSIX
+    /// [`kill(2)`], so the default works on macOS and Linux alike (no per-backend
+    /// impl). Fails when the process is gone or not ours to signal.
+    fn kill_process(&self, pid: i32, sig: i32) -> Result<(), PrexpError> {
+        // SAFETY: `kill(2)` is a plain syscall wrapper; a bad pid/sig just returns
+        // -1 (which we surface as an error). A `sig` of 0 tests existence only.
+        let rc = unsafe { libc_kill(pid, sig) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(PrexpError::Backend(format!(
+                "kill(pid={pid}, sig={sig}) failed"
+            )))
+        }
     }
 
     /// Reverse lookup: find all processes that have the given path open.
