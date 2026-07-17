@@ -127,6 +127,10 @@ impl ProcessSource for MacosProcessSource {
         })
     }
 
+    fn system_boot_time_secs(&self) -> Result<u64, PrexpError> {
+        prexp_ffi::get_boot_time_secs().map_err(ffi_to_prexp)
+    }
+
     fn cpu_perf_levels(&self) -> Result<Vec<CpuKind>, PrexpError> {
         let levels = prexp_ffi::get_cpu_perf_levels().map_err(ffi_to_prexp)?;
         Ok(levels

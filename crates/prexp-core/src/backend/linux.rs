@@ -124,6 +124,12 @@ impl ProcessSource for LinuxProcessSource {
         ))
     }
 
+    fn system_boot_time_secs(&self) -> Result<u64, PrexpError> {
+        procfs::boot_time_secs()
+            .map(|s| s as u64)
+            .map_err(|e| PrexpError::Backend(format!("boot time read failed: {e}")))
+    }
+
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError> {
         let proc = Process::new(pid)
             .map_err(|e| proc_err_to_prexp(e, pid))?;

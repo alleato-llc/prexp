@@ -163,6 +163,18 @@ pub const PROC_PIDVNODEPATHINFO: c_int = 9;
 // sysctl constants for environment variables.
 pub const CTL_KERN: c_int = 1;
 pub const KERN_PROCARGS2: c_int = 49;
+/// `sysctl` selector for the system boot time (returns a [`Timeval`]).
+pub const KERN_BOOTTIME: c_int = 21;
+
+/// A C `struct timeval` (seconds + microseconds since the Unix epoch). macOS's
+/// `tv_sec` is a 64-bit `time_t`, `tv_usec` a 32-bit `suseconds_t`; the struct
+/// pads to 16 bytes, matching what `sysctl(KERN_BOOTTIME)` writes.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct Timeval {
+    pub tv_sec: i64,
+    pub tv_usec: i32,
+}
 
 // TCP state constants.
 pub const TCPS_CLOSED: i32 = 0;

@@ -40,6 +40,16 @@ pub trait ProcessSource {
         ))
     }
 
+    /// The Unix-epoch second at which the system booted. Subtract from the
+    /// current time to get the system uptime; the value only changes across
+    /// reboots, so a caller can read it once and cache it. The default is
+    /// unsupported; each platform backend overrides it.
+    fn system_boot_time_secs(&self) -> Result<u64, PrexpError> {
+        Err(PrexpError::Backend(
+            "system boot time not available on this platform".into(),
+        ))
+    }
+
     /// Get detailed process information for the info panel.
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError>;
 }

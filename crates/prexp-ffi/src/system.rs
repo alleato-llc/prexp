@@ -465,9 +465,50 @@ fn cf_prop_cluster_type(entry: u32, key: raw::CfStringRef) -> CoreType {
     kind
 }
 
+/// The Unix-epoch second at which the system booted, from
+/// `sysctl(KERN_BOOTTIME)` (a `timeval`). Subtract from the current time to get
+/// the system uptime. Static-ish (only changes across reboots), so a caller can
+/// read it once.
+pub fn get_boot_time_secs() -> Result<u64, FfiError> {
+    let mib = [raw::CTL_KERN, raw::KERN_BOOTTIME];
+    let mut tv = raw::Timeval {
+        tv_sec: 0,
+        tv_usec: 0,
+    };
+    let mut len = mem::size_of::<raw::Timeval>();
+    let ret = unsafe {
+        raw::sysctl(
+            mib.as_ptr(),
+            2,
+            &mut tv as *mut _ as *mut c_void,
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    if ret != 0 || tv.tv_sec <= 0 {
+        return Err(FfiError::SystemError {
+            function: "sysctl(KERN_BOOTTIME)",
+            pid: 0,
+            reason: "failed to read boot time".into(),
+        });
+    }
+    Ok(tv.tv_sec as u64)
+}
+
 #[cfg(test)]
 mod perf_level_tests {
     use super::*;
+
+    #[test]
+    fn boot_time_is_in_the_past() {
+        let boot = get_boot_time_secs().expect("read boot time");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_secs();
+        assert!(boot > 0 && boot <= now, "boot {boot} should be <= now {now}");
+    }
 
     #[test]
     fn perf_levels_cover_every_core_and_sum_to_the_logical_count() {
