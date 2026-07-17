@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 
 use prexp_core::error::PrexpError;
-use prexp_core::models::ProcessSnapshot;
+use prexp_core::models::{ProcessDetail, ProcessSnapshot};
 use prexp_core::source::ProcessSource;
+use prexp_core::system::{CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
 
 /// Test double for ProcessSource.
 ///
@@ -42,5 +43,25 @@ impl ProcessSource for FakeProcessSource {
             .filter(|s| s.resources.iter().any(|r| r.path.as_deref() == Some(path)))
             .cloned()
             .collect())
+    }
+
+    fn cpu_ticks(&self) -> Result<Vec<CpuTicks>, PrexpError> {
+        Ok(Vec::new())
+    }
+
+    fn memory_info(&self) -> Result<MemoryInfo, PrexpError> {
+        Ok(MemoryInfo { total: 0, used: 0, free: 0, wired: 0, compressed: 0 })
+    }
+
+    fn network_counters(&self) -> Result<NetworkCounters, PrexpError> {
+        Ok(NetworkCounters { rx_bytes: 0, tx_bytes: 0 })
+    }
+
+    fn disk_counters(&self) -> Result<DiskCounters, PrexpError> {
+        Ok(DiskCounters { read_bytes: 0, write_bytes: 0 })
+    }
+
+    fn process_detail(&self, _pid: i32, _parent_name: &str) -> Result<ProcessDetail, PrexpError> {
+        Err(PrexpError::Backend("not implemented in fake source".into()))
     }
 }

@@ -2,7 +2,7 @@ mod support;
 
 use std::time::Duration;
 
-use prexp_core::models::{OpenResource, ProcessSnapshot, ResourceKind};
+use prexp_core::models::{DiskIo, OpenResource, ProcessActivity, ProcessMemory, ProcessSnapshot, ProcessState, ResourceKind};
 
 use prexp_app::tui::app::{App, Chart, ChartConfig, Column, FileSortField, InputMode, MainView, ProcessSortField, SortDirection};
 use support::fake_source::FakeProcessSource;
@@ -21,8 +21,10 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             pid: 100,
             ppid: 1,
             name: "nginx".into(),
-            thread_count: 8,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 8, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/access.log")),
                 resource(4, ResourceKind::Socket, None),
@@ -32,16 +34,20 @@ fn sample_snapshots() -> Vec<ProcessSnapshot> {
             pid: 200,
             ppid: 100,
             name: "node".into(),
-            thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 4, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![resource(3, ResourceKind::File, Some("/app/server.js"))],
         },
         ProcessSnapshot {
             pid: 300,
             ppid: 1,
             name: "redis-server".into(),
-            thread_count: 3,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 3, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/lib/redis/dump.rdb")),
                 resource(4, ResourceKind::Socket, None),
@@ -803,13 +809,11 @@ fn sample_with_zombie() -> Vec<ProcessSnapshot> {
         pid: 400,
         ppid: 1,
         name: "defunct".into(),
-        thread_count: 0,
-        memory_rss: 0,
-        memory_phys: 0,
-        cpu_time_ns: 0,
-        faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0,
-        state: prexp_ffi::ProcessState::Zombie,
+        state: ProcessState::Zombie,
         accessible: true,
+        memory: ProcessMemory { rss: 0, phys: 0 },
+        activity: ProcessActivity { cpu_time_ns: 0, thread_count: 0, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+        disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
         resources: Vec::new(),
     });
     snaps
@@ -822,7 +826,7 @@ fn zombie_process_state() {
     app.refresh(&source);
 
     let zombie = app.snapshots.iter().find(|s| s.pid == 400).unwrap();
-    assert_eq!(zombie.state, prexp_ffi::ProcessState::Zombie);
+    assert_eq!(zombie.state, ProcessState::Zombie);
     assert_eq!(zombie.state.label(), "ZMB");
 }
 
@@ -836,10 +840,10 @@ fn state_column_off_by_default() {
 
 #[test]
 fn info_panel_opens_and_closes() {
-    let (mut app, _) = create_app_with_data();
+    let (mut app, source) = create_app_with_data();
     assert!(!app.info_open);
 
-    app.open_info();
+    app.open_info(&source);
     assert!(app.info_open);
     assert!(app.info_detail.is_none()); // FakeProcessSource can't call FFI
     // But the method sets info_open regardless of detail success
@@ -936,7 +940,7 @@ fn info_env_tab_moves_selection() {
     assert_eq!(app.info_env_selected, 0); // no detail loaded
 
     // With a mock detail
-    app.info_detail = Some(prexp_ffi::ProcessDetail {
+    app.info_detail = Some(prexp_core::models::ProcessDetail {
         pid: 100,
         ppid: 1,
         parent_name: "init".into(),
@@ -945,7 +949,7 @@ fn info_env_tab_moves_selection() {
         cwd: "/".into(),
         user: "root".into(),
         uid: 0,
-        state: prexp_ffi::ProcessState::Running,
+        state: ProcessState::Running,
         nice: 0,
         started_secs: 0,
         thread_count: 1,
@@ -1041,13 +1045,11 @@ fn history_removes_dead_processes() {
         pid: 100,
         ppid: 1,
         name: "nginx".into(),
-        thread_count: 8,
-        memory_rss: 1024 * 1024 * 50,
-        memory_phys: 1024 * 1024 * 30,
-        cpu_time_ns: 1_000_000_000,
-        faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0,
-        state: prexp_ffi::ProcessState::Running,
+        state: ProcessState::Running,
         accessible: true,
+        memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+        activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 8, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+        disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
         resources: Vec::new(),
     }]);
     app.refresh(&source2);

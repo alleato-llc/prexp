@@ -1,9 +1,11 @@
-//! Safe wrappers for system-level APIs (CPU cores, memory).
+//! Safe wrappers for system-level APIs (CPU cores, memory, network, disk).
 //!
-//! Provides: get_cpu_ticks, get_memory_info.
+//! Provides: get_cpu_ticks, get_memory_info, get_network_counters,
+//! get_disk_counters.
 
+use std::ffi::CString;
 use std::mem;
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 
 use crate::error::FfiError;
 use crate::raw;
@@ -25,6 +27,22 @@ pub struct MemoryInfo {
     pub free: u64,
     pub wired: u64,
     pub compressed: u64,
+}
+
+/// Cumulative system-wide network byte counters (monotonic; diff two reads for
+/// a rate). Summed across all non-loopback interfaces.
+#[derive(Debug, Clone, Copy)]
+pub struct NetworkCounters {
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+}
+
+/// Cumulative system-wide disk byte counters (monotonic; diff two reads for a
+/// rate). Summed across all block-storage drivers.
+#[derive(Debug, Clone, Copy)]
+pub struct DiskCounters {
+    pub read_bytes: u64,
+    pub write_bytes: u64,
 }
 
 /// Get per-CPU tick counts for all cores.
@@ -142,4 +160,181 @@ fn get_page_size() -> u64 {
         raw::sysctlbyname(name.as_ptr(), &mut pagesize as *mut _ as *mut c_void, &mut len, std::ptr::null(), 0)
     };
     if ret != 0 { 4096 } else { pagesize }
+}
+
+/// Get cumulative system-wide network byte counters, summed across all
+/// non-loopback interfaces. Reads the kernel's per-interface counter list via
+/// `sysctl(NET_RT_IFLIST2)` and walks the returned `if_msghdr2` records.
+pub fn get_network_counters() -> Result<NetworkCounters, FfiError> {
+    let mut mib: [i32; 6] = [
+        raw::CTL_NET,
+        raw::PF_ROUTE,
+        0,
+        0,
+        raw::NET_RT_IFLIST2,
+        0,
+    ];
+
+    // First call with a null buffer asks the kernel for the byte length.
+    let mut len: usize = 0;
+    let ret = unsafe {
+        raw::sysctl(mib.as_mut_ptr(), 6, std::ptr::null_mut(), &mut len, std::ptr::null(), 0)
+    };
+    if ret != 0 || len == 0 {
+        return Err(FfiError::SystemError {
+            function: "sysctl(NET_RT_IFLIST2) sizing",
+            pid: 0,
+            reason: "failed to size interface list".into(),
+        });
+    }
+
+    let mut buf = vec![0u8; len];
+    let ret = unsafe {
+        raw::sysctl(
+            mib.as_mut_ptr(),
+            6,
+            buf.as_mut_ptr() as *mut c_void,
+            &mut len,
+            std::ptr::null(),
+            0,
+        )
+    };
+    if ret != 0 {
+        return Err(FfiError::SystemError {
+            function: "sysctl(NET_RT_IFLIST2)",
+            pid: 0,
+            reason: "failed to read interface list".into(),
+        });
+    }
+
+    let mut rx: u64 = 0;
+    let mut tx: u64 = 0;
+    let hdr_size = mem::size_of::<raw::IfMsghdr2>();
+    let mut off = 0usize;
+    // Each record starts with `ifm_msglen` (u16) giving its own length; walk by
+    // that. Only RTM_IFINFO2 records carry the `if_data64` byte counters.
+    while off + 4 <= len {
+        let msglen = u16::from_ne_bytes([buf[off], buf[off + 1]]) as usize;
+        if msglen == 0 {
+            break;
+        }
+        let mtype = buf[off + 3];
+        if mtype == raw::RTM_IFINFO2 && off + hdr_size <= len {
+            // The buffer is byte-aligned, so read the header unaligned.
+            let hdr = unsafe {
+                std::ptr::read_unaligned(buf.as_ptr().add(off) as *const raw::IfMsghdr2)
+            };
+            if hdr.ifm_flags & raw::IFF_LOOPBACK == 0 {
+                rx = rx.wrapping_add(hdr.ifm_data.ifi_ibytes);
+                tx = tx.wrapping_add(hdr.ifm_data.ifi_obytes);
+            }
+        }
+        off += msglen;
+    }
+
+    Ok(NetworkCounters { rx_bytes: rx, tx_bytes: tx })
+}
+
+/// Get cumulative system-wide disk byte counters, summed across every
+/// `IOBlockStorageDriver` in the IORegistry (its `Statistics` dictionary's
+/// `Bytes (Read)` / `Bytes (Write)` entries).
+pub fn get_disk_counters() -> Result<DiskCounters, FfiError> {
+    let class = CString::new("IOBlockStorageDriver").unwrap();
+    let matching = unsafe { raw::IOServiceMatching(class.as_ptr()) };
+    if matching.is_null() {
+        return Err(FfiError::SystemError {
+            function: "IOServiceMatching",
+            pid: 0,
+            reason: "returned null".into(),
+        });
+    }
+
+    // IOServiceGetMatchingServices consumes the `matching` dictionary reference.
+    let mut iter: u32 = 0;
+    let kr = unsafe {
+        raw::IOServiceGetMatchingServices(raw::KIO_MASTER_PORT_DEFAULT, matching, &mut iter)
+    };
+    if kr != 0 {
+        return Err(FfiError::SystemError {
+            function: "IOServiceGetMatchingServices",
+            pid: 0,
+            reason: format!("kern_return_t = {}", kr),
+        });
+    }
+
+    let stats_key = cfstr("Statistics");
+    let read_key = cfstr("Bytes (Read)");
+    let write_key = cfstr("Bytes (Write)");
+
+    let mut total_read: u64 = 0;
+    let mut total_write: u64 = 0;
+    loop {
+        let drive = unsafe { raw::IOIteratorNext(iter) };
+        if drive == 0 {
+            break;
+        }
+        let props = unsafe {
+            raw::IORegistryEntryCreateCFProperty(drive, stats_key, std::ptr::null(), 0)
+        };
+        if !props.is_null() {
+            total_read = total_read.wrapping_add(cf_dict_u64(props, read_key));
+            total_write = total_write.wrapping_add(cf_dict_u64(props, write_key));
+            unsafe { raw::CFRelease(props) };
+        }
+        unsafe { raw::IOObjectRelease(drive) };
+    }
+
+    unsafe {
+        raw::IOObjectRelease(iter);
+        cf_release(stats_key);
+        cf_release(read_key);
+        cf_release(write_key);
+    }
+
+    Ok(DiskCounters { read_bytes: total_read, write_bytes: total_write })
+}
+
+/// Create a CoreFoundation string from a UTF-8 `&str` (null if creation fails).
+fn cfstr(s: &str) -> raw::CfStringRef {
+    let Ok(c) = CString::new(s) else {
+        return std::ptr::null();
+    };
+    unsafe {
+        raw::CFStringCreateWithCString(
+            std::ptr::null(),
+            c.as_ptr() as *const c_char,
+            raw::KCF_STRING_ENCODING_UTF8,
+        )
+    }
+}
+
+/// Release a CF ref, guarding against the null `cfstr` may return.
+fn cf_release(cf: raw::CfTypeRef) {
+    if !cf.is_null() {
+        unsafe { raw::CFRelease(cf) };
+    }
+}
+
+/// Read a `u64` out of a CF dictionary by key, or `0` when absent/non-numeric.
+fn cf_dict_u64(dict: raw::CfTypeRef, key: raw::CfStringRef) -> u64 {
+    if key.is_null() {
+        return 0;
+    }
+    let val = unsafe { raw::CFDictionaryGetValue(dict, key as *const c_void) };
+    if val.is_null() {
+        return 0;
+    }
+    let mut out: i64 = 0;
+    let ok = unsafe {
+        raw::CFNumberGetValue(
+            val,
+            raw::KCF_NUMBER_SINT64_TYPE,
+            &mut out as *mut i64 as *mut c_void,
+        )
+    };
+    if ok != 0 && out > 0 {
+        out as u64
+    } else {
+        0
+    }
 }

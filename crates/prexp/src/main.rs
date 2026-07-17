@@ -35,7 +35,8 @@ fn run_info_mode(source: &dyn ProcessSource, cli: &Cli, tab: Option<&InfoTab>) -
         .map(|p| p.name.as_str())
         .unwrap_or("?");
 
-    let detail = prexp_ffi::get_process_detail(pid, parent_name)
+    let detail = source.process_detail(pid, parent_name)
+        .map_err(|e| anyhow::anyhow!("{}", e))
         .context(format!("failed to get info for pid {}", pid))?;
 
     let mut stdout = io::stdout().lock();

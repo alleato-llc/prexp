@@ -526,10 +526,54 @@ fn tcp_state_name(state: i32) -> String {
 
 /// Get username for a UID. Falls back to the numeric UID.
 pub fn get_username(uid: u32) -> String {
-    // Simple approach: try /etc/passwd or just return uid.
-    // On macOS, most users are in Directory Services, not /etc/passwd.
-    // We'll just return the numeric uid for now.
-    format!("uid:{}", uid)
+    use std::ffi::CStr;
+    use std::os::raw::c_char;
+
+    #[repr(C)]
+    struct Passwd {
+        pw_name: *mut c_char,
+        pw_passwd: *mut c_char,
+        pw_uid: u32,
+        pw_gid: u32,
+        pw_change: i64,
+        pw_class: *mut c_char,
+        pw_gecos: *mut c_char,
+        pw_dir: *mut c_char,
+        pw_shell: *mut c_char,
+        pw_expire: i64,
+        pw_fields: c_int,
+    }
+
+    extern "C" {
+        fn getpwuid_r(
+            uid: u32,
+            pwd: *mut Passwd,
+            buf: *mut c_char,
+            buflen: usize,
+            result: *mut *mut Passwd,
+        ) -> c_int;
+    }
+
+    let mut pwd: Passwd = unsafe { mem::zeroed() };
+    let mut result: *mut Passwd = std::ptr::null_mut();
+    let mut buf = vec![0u8; 1024];
+
+    let ret = unsafe {
+        getpwuid_r(
+            uid,
+            &mut pwd,
+            buf.as_mut_ptr() as *mut c_char,
+            buf.len(),
+            &mut result,
+        )
+    };
+
+    if ret == 0 && !result.is_null() {
+        let name = unsafe { CStr::from_ptr(pwd.pw_name) };
+        name.to_string_lossy().into_owned()
+    } else {
+        format!("{}", uid)
+    }
 }
 
 /// Build a full ProcessDetail for the info panel.

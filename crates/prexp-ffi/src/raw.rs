@@ -546,3 +546,113 @@ extern "C" {
         newlen: usize,
     ) -> c_int;
 }
+
+// ---------------------------------------------------------------------------
+// Network interface counters (sysctl NET_RT_IFLIST2)
+// ---------------------------------------------------------------------------
+
+/// `sysctl` MIB components for walking the per-interface counter list:
+/// `[CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]`.
+pub const CTL_NET: c_int = 4;
+pub const PF_ROUTE: c_int = 17;
+pub const NET_RT_IFLIST2: c_int = 6;
+
+/// `if_msghdr2.ifm_type` value marking an interface-info record (the ones that
+/// carry [`IfData64`]); other record types in the buffer are skipped.
+pub const RTM_IFINFO2: u8 = 0x12;
+
+/// `if_msghdr2.ifm_flags` bit marking a loopback interface, excluded from the
+/// system network total.
+pub const IFF_LOOPBACK: i32 = 0x8;
+
+/// Partial `struct if_data64` — laid out through the byte counters we read.
+/// Trailing fields (multicast, timings, `ifi_lastchange`) are omitted, which
+/// only truncates the read; every field above keeps its correct offset.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct IfData64 {
+    pub ifi_type: u8,
+    pub ifi_typelen: u8,
+    pub ifi_physical: u8,
+    pub ifi_addrlen: u8,
+    pub ifi_hdrlen: u8,
+    pub ifi_recvquota: u8,
+    pub ifi_xmitquota: u8,
+    pub ifi_unused1: u8,
+    pub ifi_mtu: u32,
+    pub ifi_metric: u32,
+    pub ifi_baudrate: u64,
+    pub ifi_ipackets: u64,
+    pub ifi_ierrors: u64,
+    pub ifi_opackets: u64,
+    pub ifi_oerrors: u64,
+    pub ifi_collisions: u64,
+    pub ifi_ibytes: u64,
+    pub ifi_obytes: u64,
+}
+
+/// Partial `struct if_msghdr2` — the per-interface header from NET_RT_IFLIST2,
+/// embedding [`IfData64`]. `ifm_msglen` gives the record's length for walking
+/// the buffer; `ifm_type` selects [`RTM_IFINFO2`] records.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct IfMsghdr2 {
+    pub ifm_msglen: u16,
+    pub ifm_version: u8,
+    pub ifm_type: u8,
+    pub ifm_addrs: i32,
+    pub ifm_flags: i32,
+    pub ifm_index: u16,
+    pub ifm_snd_len: i32,
+    pub ifm_snd_maxlen: i32,
+    pub ifm_snd_drops: i32,
+    pub ifm_timer: i32,
+    pub ifm_data: IfData64,
+}
+
+// ---------------------------------------------------------------------------
+// Disk counters (IOKit IOBlockStorageDriver statistics)
+// ---------------------------------------------------------------------------
+
+/// Opaque CoreFoundation / IOKit handle types. CF refs are pointers;
+/// IOKit objects are `mach_port_t` (u32).
+pub type CfTypeRef = *const c_void;
+pub type CfStringRef = *const c_void;
+pub type CfAllocatorRef = *const c_void;
+
+/// `kIOMasterPortDefault` (a.k.a. the default main port) is the null port `0`.
+pub const KIO_MASTER_PORT_DEFAULT: u32 = 0;
+/// `kCFStringEncodingUTF8`.
+pub const KCF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
+/// `kCFNumberSInt64Type` — the counters are 64-bit.
+pub const KCF_NUMBER_SINT64_TYPE: i64 = 4;
+
+#[link(name = "IOKit", kind = "framework")]
+extern "C" {
+    pub fn IOServiceMatching(name: *const c_char) -> *mut c_void;
+    pub fn IOServiceGetMatchingServices(
+        main_port: u32,
+        matching: *const c_void,
+        existing: *mut u32,
+    ) -> i32;
+    pub fn IOIteratorNext(iterator: u32) -> u32;
+    pub fn IORegistryEntryCreateCFProperty(
+        entry: u32,
+        key: CfStringRef,
+        allocator: CfAllocatorRef,
+        options: u32,
+    ) -> CfTypeRef;
+    pub fn IOObjectRelease(object: u32) -> i32;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    pub fn CFStringCreateWithCString(
+        alloc: CfAllocatorRef,
+        c_str: *const c_char,
+        encoding: u32,
+    ) -> CfStringRef;
+    pub fn CFDictionaryGetValue(the_dict: CfTypeRef, key: *const c_void) -> *const c_void;
+    pub fn CFNumberGetValue(number: CfTypeRef, the_type: i64, value_ptr: *mut c_void) -> u8;
+    pub fn CFRelease(cf: CfTypeRef);
+}

@@ -360,7 +360,7 @@ pub enum InputMode {
 #[derive(Debug, Clone)]
 pub struct SystemStats {
     pub cpu_usage: Vec<f64>,
-    pub memory: Option<prexp_ffi::MemoryInfo>,
+    pub memory: Option<prexp_core::system::MemoryInfo>,
     pub total_processes: usize,
     pub total_threads: i64,
     pub total_fds: usize,
@@ -382,7 +382,7 @@ pub struct App {
     // System summary
     pub show_summary: bool,
     pub system_stats: SystemStats,
-    pub(crate) prev_cpu_ticks: Vec<prexp_ffi::CpuTicks>,
+    pub(crate) prev_cpu_ticks: Vec<prexp_core::system::CpuTicks>,
 
     // Process view state
     pub filtered_indices: Vec<usize>,
@@ -443,7 +443,7 @@ pub struct App {
     pub info_tab: usize,
     pub info_scroll: usize,
     pub info_env_selected: usize,
-    pub info_detail: Option<prexp_ffi::ProcessDetail>,
+    pub info_detail: Option<prexp_core::models::ProcessDetail>,
     pub process_history: HashMap<i32, ProcessHistory>,
 
     // Kill signal
@@ -549,7 +549,7 @@ impl App {
                 self.snapshots = snapshots;
                 self.rebuild_all();
                 if self.show_summary {
-                    self.refresh_system_stats();
+                    self.refresh_system_stats(source);
                 }
                 self.last_refresh = Instant::now();
                 self.status_message = None;
@@ -570,11 +570,11 @@ impl App {
             let history = self.process_history
                 .entry(snap.pid)
                 .or_insert_with(ProcessHistory::new);
-            history.push(cpu_pct, snap.memory_rss);
+            history.push(cpu_pct, snap.memory.rss);
 
             // Absolute charts.
             if self.chart_config.is_enabled(Chart::ThreadCount) {
-                ProcessHistory::push_val(&mut history.threads, snap.thread_count as f64);
+                ProcessHistory::push_val(&mut history.threads, snap.activity.thread_count as f64);
             }
             if self.chart_config.is_enabled(Chart::FdCount) {
                 ProcessHistory::push_val(&mut history.fd_count, snap.resources.len() as f64);
@@ -587,21 +587,21 @@ impl App {
                     // Use i64 for all deltas to avoid i32 overflow when
                     // cumulative counters wrap past INT_MAX.
                     if self.chart_config.is_enabled(Chart::PageFaults) {
-                        let delta = (snap.faults as i64 - prev.faults as i64).max(0) as f64;
+                        let delta = (snap.activity.faults as i64 - prev.faults as i64).max(0) as f64;
                         ProcessHistory::push_val(&mut history.faults_rate, delta / elapsed_secs);
                     }
                     if self.chart_config.is_enabled(Chart::ContextSwitches) {
-                        let delta = (snap.context_switches as i64 - prev.context_switches as i64).max(0) as f64;
+                        let delta = (snap.activity.context_switches as i64 - prev.context_switches as i64).max(0) as f64;
                         ProcessHistory::push_val(&mut history.csw_rate, delta / elapsed_secs);
                     }
                     if self.chart_config.is_enabled(Chart::SyscallRate) {
-                        let cur_sys = snap.syscalls_mach as i64 + snap.syscalls_unix as i64;
+                        let cur_sys = snap.activity.syscalls_mach as i64 + snap.activity.syscalls_unix as i64;
                         let delta = (cur_sys - prev.syscalls).max(0) as f64;
                         ProcessHistory::push_val(&mut history.syscall_rate, delta / elapsed_secs);
                     }
                     if self.chart_config.is_enabled(Chart::DiskIo) {
-                        let dr = snap.disk_bytes_read.saturating_sub(prev.disk_read) as f64;
-                        let dw = snap.disk_bytes_written.saturating_sub(prev.disk_write) as f64;
+                        let dr = snap.disk_io.bytes_read.saturating_sub(prev.disk_read) as f64;
+                        let dw = snap.disk_io.bytes_written.saturating_sub(prev.disk_write) as f64;
                         ProcessHistory::push_val(&mut history.disk_read_rate, dr / elapsed_secs);
                         ProcessHistory::push_val(&mut history.disk_write_rate, dw / elapsed_secs);
                     }
@@ -610,11 +610,11 @@ impl App {
 
             // Store current counters for next delta.
             self.prev_counters.insert(snap.pid, ProcessCounters {
-                faults: snap.faults,
-                context_switches: snap.context_switches,
-                syscalls: snap.syscalls_mach as i64 + snap.syscalls_unix as i64,
-                disk_read: snap.disk_bytes_read,
-                disk_write: snap.disk_bytes_written,
+                faults: snap.activity.faults,
+                context_switches: snap.activity.context_switches,
+                syscalls: snap.activity.syscalls_mach as i64 + snap.activity.syscalls_unix as i64,
+                disk_read: snap.disk_io.bytes_read,
+                disk_write: snap.disk_io.bytes_written,
             });
         }
 
@@ -1119,14 +1119,14 @@ impl App {
 
     // -- Info panel --
 
-    pub fn open_info(&mut self) {
+    pub fn open_info(&mut self, source: &dyn ProcessSource) {
         if let Some(snap) = self.selected_snapshot() {
             let pid = snap.pid;
             let parent_name = self.snapshots.iter()
                 .find(|s| s.pid == snap.ppid)
                 .map(|s| s.name.as_str())
                 .unwrap_or("?");
-            self.info_detail = prexp_ffi::get_process_detail(pid, parent_name).ok();
+            self.info_detail = source.process_detail(pid, parent_name).ok();
             self.info_open = true;
             self.info_tab = 0;
             self.info_scroll = 0;

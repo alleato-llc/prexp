@@ -1,6 +1,6 @@
 mod support;
 
-use prexp_core::models::{OpenResource, ProcessSnapshot, ResourceKind};
+use prexp_core::models::{DiskIo, OpenResource, ProcessActivity, ProcessMemory, ProcessSnapshot, ProcessState, ResourceKind};
 use prexp_core::source::ProcessSource;
 use support::fake_source::FakeProcessSource;
 
@@ -18,8 +18,10 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             pid: 100,
             ppid: 1,
             name: "nginx".into(),
-            thread_count: 8,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 8, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/nginx/access.log")),
                 resource(4, ResourceKind::File, Some("/var/log/nginx/error.log")),
@@ -30,8 +32,10 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             pid: 200,
             ppid: 1,
             name: "logrotate".into(),
-            thread_count: 1,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 1, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/log/nginx/access.log")),
             ],
@@ -40,8 +44,10 @@ fn create_source_with_overlapping_paths() -> FakeProcessSource {
             pid: 300,
             ppid: 1,
             name: "redis".into(),
-            thread_count: 4,
-            memory_rss: 1024 * 1024 * 50, memory_phys: 1024 * 1024 * 30, cpu_time_ns: 1_000_000_000, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0, disk_bytes_read: 0, disk_bytes_written: 0, state: prexp_ffi::ProcessState::Running, accessible: true,
+            state: ProcessState::Running, accessible: true,
+            memory: ProcessMemory { rss: 1024 * 1024 * 50, phys: 1024 * 1024 * 30 },
+            activity: ProcessActivity { cpu_time_ns: 1_000_000_000, thread_count: 4, faults: 0, context_switches: 0, syscalls_mach: 0, syscalls_unix: 0 },
+            disk_io: DiskIo { bytes_read: 0, bytes_written: 0 },
             resources: vec![
                 resource(3, ResourceKind::File, Some("/var/lib/redis/dump.rdb")),
                 resource(4, ResourceKind::Socket, None),

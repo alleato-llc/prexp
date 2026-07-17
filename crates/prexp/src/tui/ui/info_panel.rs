@@ -75,7 +75,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
     }
 }
 
-fn overview_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+fn overview_lines(detail: &prexp_core::models::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
     let nice_label = nice_display(detail.nice);
     let uptime = format_uptime(detail.started_secs);
     let started = format_timestamp(detail.started_secs);
@@ -95,7 +95,7 @@ fn overview_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Th
     ]
 }
 
-fn resources_lines(detail: &prexp_ffi::ProcessDetail, app: &App, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+fn resources_lines(detail: &prexp_core::models::ProcessDetail, app: &App, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
     let mut lines = vec![
         Line::from(""),
         section_header("RESOURCES", t),
@@ -251,7 +251,7 @@ fn format_rate(bytes: f64) -> String {
     app::format_memory(bytes as u64)
 }
 
-fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
+fn network_lines(detail: &prexp_core::models::ProcessDetail, t: &super::super::theme::Theme) -> Vec<Line<'static>> {
     let active = detail.network.iter().filter(|c| {
         matches!(c.state.as_deref(), Some("ESTABLISHED") | Some("LISTEN"))
     }).count();
@@ -285,7 +285,7 @@ fn network_lines(detail: &prexp_ffi::ProcessDetail, t: &super::super::theme::The
 fn draw_environment_tab(
     frame: &mut Frame,
     app: &App,
-    detail: &prexp_ffi::ProcessDetail,
+    detail: &prexp_core::models::ProcessDetail,
     t: &super::super::theme::Theme,
     area: Rect,
 ) {

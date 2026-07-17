@@ -17,6 +17,25 @@ fn struct_sizes_are_reasonable() {
     // ProcBsdInfo and ProcTaskInfo should be non-trivial
     assert!(std::mem::size_of::<raw::ProcBsdInfo>() > 100);
     assert!(std::mem::size_of::<raw::ProcTaskInfo>() > 50);
+
+    // IfData64 (truncated at ifi_obytes): 8 u8 + 2 u32 + 8 u64 = 80 bytes.
+    // If this drifts, ifi_ibytes/ifi_obytes would read the wrong offset.
+    assert_eq!(std::mem::size_of::<raw::IfData64>(), 80);
+    // IfMsghdr2: 32-byte header + IfData64 = 112 bytes.
+    assert_eq!(std::mem::size_of::<raw::IfMsghdr2>(), 112);
+}
+
+#[test]
+#[ignore] // Requires running on macOS — run with: cargo test -- --ignored
+fn network_and_disk_counters_are_plausible() {
+    let net = prexp_ffi::get_network_counters().expect("read network counters");
+    // A machine that has done any networking has non-zero rx.
+    println!("net rx={} tx={}", net.rx_bytes, net.tx_bytes);
+
+    let disk = prexp_ffi::get_disk_counters().expect("read disk counters");
+    // Booting reads from disk, so reads are non-zero.
+    println!("disk read={} write={}", disk.read_bytes, disk.write_bytes);
+    assert!(disk.read_bytes > 0, "expected non-zero disk reads since boot");
 }
 
 #[test]

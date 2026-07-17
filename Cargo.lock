@@ -545,7 +545,6 @@ dependencies = [
  "clap",
  "crossterm",
  "prexp-core",
- "prexp-ffi",
  "ratatui",
  "serde_json",
 ]

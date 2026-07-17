@@ -81,7 +81,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|entry| {
             let snap = &app.snapshots[entry.snapshot_index];
-            let display_name = if snap.state == prexp_ffi::ProcessState::Zombie {
+            let display_name = if snap.state == prexp_core::models::ProcessState::Zombie {
                 format!("{}{} [Z]", entry.prefix, snap.name)
             } else {
                 format!("{}{}", entry.prefix, snap.name)
@@ -100,17 +100,17 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
                 cells.push(Cell::from(format!("{:.1}", pct)));
             }
             if cfg.is_enabled(Column::Mem) {
-                cells.push(Cell::from(app::format_memory(snap.memory_rss)));
+                cells.push(Cell::from(app::format_memory(snap.memory.rss)));
             }
             if cfg.is_enabled(Column::Pmem) {
-                cells.push(Cell::from(if snap.memory_phys > 0 {
-                    app::format_memory(snap.memory_phys)
+                cells.push(Cell::from(if snap.memory.phys > 0 {
+                    app::format_memory(snap.memory.phys)
                 } else {
                     "-".into()
                 }));
             }
             if cfg.is_enabled(Column::Thr) {
-                cells.push(Cell::from(snap.thread_count.to_string()));
+                cells.push(Cell::from(snap.activity.thread_count.to_string()));
             }
             if cfg.is_enabled(Column::Files) {
                 let n = snap.count_by_kind(&ResourceKind::File)
@@ -133,7 +133,7 @@ pub fn draw(frame: &mut Frame, app: &App, area: Rect) {
             }
             if cfg.is_enabled(Column::State) {
                 let label = snap.state.label();
-                let style = if snap.state == prexp_ffi::ProcessState::Zombie {
+                let style = if snap.state == prexp_core::models::ProcessState::Zombie {
                     Style::default().fg(Color::Red)
                 } else {
                     row_style

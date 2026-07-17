@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use prexp_core::models::ProcessSnapshot;
+use prexp_core::source::ProcessSource;
 
 use super::{App, Column};
 
@@ -24,7 +25,7 @@ impl App {
         if elapsed_ns > 0.0 {
             for snap in new_snapshots {
                 if let Some(&prev_cpu) = self.prev_cpu_times.get(&snap.pid) {
-                    let delta_cpu = snap.cpu_time_ns.saturating_sub(prev_cpu) as f64;
+                    let delta_cpu = snap.activity.cpu_time_ns.saturating_sub(prev_cpu) as f64;
                     let pct = (delta_cpu / elapsed_ns) * 100.0;
                     self.cpu_percentages.insert(snap.pid, pct);
                 }
@@ -33,14 +34,14 @@ impl App {
 
         self.prev_cpu_times.clear();
         for snap in new_snapshots {
-            self.prev_cpu_times.insert(snap.pid, snap.cpu_time_ns);
+            self.prev_cpu_times.insert(snap.pid, snap.activity.cpu_time_ns);
         }
         self.prev_refresh = Some(now);
     }
 
-    pub fn refresh_system_stats(&mut self) {
+    pub fn refresh_system_stats(&mut self, source: &dyn ProcessSource) {
         // Per-core CPU usage (delta-based).
-        if let Ok(new_ticks) = prexp_ffi::get_cpu_ticks() {
+        if let Ok(new_ticks) = source.cpu_ticks() {
             if self.prev_cpu_ticks.len() == new_ticks.len() {
                 self.system_stats.cpu_usage = new_ticks
                     .iter()
@@ -63,7 +64,7 @@ impl App {
         }
 
         // Memory.
-        self.system_stats.memory = prexp_ffi::get_memory_info().ok();
+        self.system_stats.memory = source.memory_info().ok();
 
         // Aggregate stats from visible snapshots only (respects show_all toggle).
         let visible = self.snapshots.iter().filter(|s| self.show_all || s.accessible);
@@ -72,7 +73,7 @@ impl App {
         let mut total_fds = 0usize;
         for s in visible {
             total_processes += 1;
-            total_threads += s.thread_count as i64;
+            total_threads += s.activity.thread_count as i64;
             total_fds += s.resources.len();
         }
         self.system_stats.total_processes = total_processes;
@@ -80,10 +81,10 @@ impl App {
         self.system_stats.total_fds = total_fds;
     }
 
-    pub fn toggle_summary(&mut self) {
+    pub fn toggle_summary(&mut self, source: &dyn ProcessSource) {
         self.show_summary = !self.show_summary;
         if self.show_summary {
-            self.refresh_system_stats();
+            self.refresh_system_stats(source);
         }
     }
 }
