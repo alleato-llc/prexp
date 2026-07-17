@@ -321,6 +321,13 @@ impl ProcessSource for LinuxProcessSource {
             environment,
         })
     }
+
+    fn process_path(&self, pid: i32) -> Result<String, PrexpError> {
+        let proc = Process::new(pid).map_err(|e| proc_err_to_prexp(e, pid))?;
+        proc.exe()
+            .map(|p| p.to_string_lossy().into_owned())
+            .map_err(|e| proc_err_to_prexp(e, pid))
+    }
 }
 
 fn snapshot_process(proc: &Process) -> Result<ProcessSnapshot, PrexpError> {

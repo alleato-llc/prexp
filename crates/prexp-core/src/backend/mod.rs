@@ -27,4 +27,16 @@ mod tests {
         assert!(!mine.name.is_empty(), "process has a name");
         assert!(mine.memory_phys > 0, "process has a memory footprint");
     }
+
+    #[test]
+    fn process_path_resolves_the_running_executable() {
+        let source = NativeSource;
+        let me = std::process::id() as i32;
+        let path = source.process_path(me).expect("read own executable path");
+        assert!(!path.is_empty(), "path is non-empty");
+        assert!(
+            std::path::Path::new(&path).is_absolute(),
+            "path is absolute: {path}"
+        );
+    }
 }

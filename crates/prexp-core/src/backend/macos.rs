@@ -216,6 +216,10 @@ impl ProcessSource for MacosProcessSource {
             environment: d.environment,
         })
     }
+
+    fn process_path(&self, pid: i32) -> Result<String, PrexpError> {
+        prexp_ffi::get_process_path(pid).map_err(ffi_to_prexp)
+    }
 }
 
 /// Create a partial snapshot for a process we couldn't fully inspect.

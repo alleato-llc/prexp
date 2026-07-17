@@ -24,6 +24,15 @@ pub trait ProcessSource {
     /// Snapshot a single process by PID.
     fn snapshot_pid(&self, pid: i32) -> Result<ProcessSnapshot, PrexpError>;
 
+    /// The full path to a process's executable. Cheaper than
+    /// [`Self::process_detail`] when only the path is needed (e.g. a "copy path"
+    /// action). The default is unsupported; each backend overrides it.
+    fn process_path(&self, _pid: i32) -> Result<String, PrexpError> {
+        Err(PrexpError::Backend(
+            "process path not available on this platform".into(),
+        ))
+    }
+
     /// Reverse lookup: find all processes that have the given path open.
     fn find_by_path(&self, path: &str) -> Result<Vec<ProcessSnapshot>, PrexpError>;
 
