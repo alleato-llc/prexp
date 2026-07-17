@@ -642,6 +642,14 @@ extern "C" {
         allocator: CfAllocatorRef,
         options: u32,
     ) -> CfTypeRef;
+    /// Look up a registry entry by plane path, e.g. `IODeviceTree:/cpus`.
+    pub fn IORegistryEntryFromPath(main_port: u32, path: *const c_char) -> u32;
+    /// Iterate an entry's children in the named plane (e.g. `IODeviceTree`).
+    pub fn IORegistryEntryGetChildIterator(
+        entry: u32,
+        plane: *const c_char,
+        iterator: *mut u32,
+    ) -> i32;
     pub fn IOObjectRelease(object: u32) -> i32;
 }
 
@@ -654,5 +662,9 @@ extern "C" {
     ) -> CfStringRef;
     pub fn CFDictionaryGetValue(the_dict: CfTypeRef, key: *const c_void) -> *const c_void;
     pub fn CFNumberGetValue(number: CfTypeRef, the_type: i64, value_ptr: *mut c_void) -> u8;
+    /// `CFData` byte length (`CFIndex` is a signed `long`).
+    pub fn CFDataGetLength(data: CfTypeRef) -> isize;
+    /// Pointer to a `CFData`'s bytes (valid while the ref is retained).
+    pub fn CFDataGetBytePtr(data: CfTypeRef) -> *const u8;
     pub fn CFRelease(cf: CfTypeRef);
 }

@@ -3,7 +3,7 @@ use prexp_ffi::{FdDetail, FdInfo, FfiError};
 use crate::error::PrexpError;
 use crate::models::{DiskIo, NetworkConnection, OpenResource, ProcessActivity, ProcessDetail, ProcessMemory, ProcessSnapshot, ProcessState, ResourceKind};
 use crate::source::ProcessSource;
-use crate::system::{CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
+use crate::system::{CpuKind, CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
 
 pub struct MacosProcessSource;
 
@@ -125,6 +125,18 @@ impl ProcessSource for MacosProcessSource {
             read_bytes: d.read_bytes,
             write_bytes: d.write_bytes,
         })
+    }
+
+    fn cpu_perf_levels(&self) -> Result<Vec<CpuKind>, PrexpError> {
+        let levels = prexp_ffi::get_cpu_perf_levels().map_err(ffi_to_prexp)?;
+        Ok(levels
+            .into_iter()
+            .map(|l| match l {
+                prexp_ffi::CoreType::Performance => CpuKind::Performance,
+                prexp_ffi::CoreType::Efficiency => CpuKind::Efficiency,
+                prexp_ffi::CoreType::Unknown => CpuKind::Unknown,
+            })
+            .collect())
     }
 
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError> {

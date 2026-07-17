@@ -32,3 +32,13 @@ pub struct DiskCounters {
     pub read_bytes: u64,
     pub write_bytes: u64,
 }
+
+/// A logical CPU's cluster type, for grouping per-core stats. Apple Silicon
+/// splits cores into Performance and Efficiency clusters; uniform hardware
+/// (Intel Macs) reports `Unknown`. Static for the machine's lifetime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpuKind {
+    Performance,
+    Efficiency,
+    Unknown,
+}

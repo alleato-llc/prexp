@@ -1,7 +1,7 @@
 //! Safe wrappers for system-level APIs (CPU cores, memory, network, disk).
 //!
 //! Provides: get_cpu_ticks, get_memory_info, get_network_counters,
-//! get_disk_counters.
+//! get_disk_counters, get_cpu_perf_levels.
 
 use std::ffi::CString;
 use std::mem;
@@ -336,5 +336,158 @@ fn cf_dict_u64(dict: raw::CfTypeRef, key: raw::CfStringRef) -> u64 {
         out as u64
     } else {
         0
+    }
+}
+
+/// A logical CPU's cluster type, for grouping per-core stats. On Apple Silicon
+/// each core is a Performance (P) or Efficiency (E) core; hardware without
+/// heterogeneous clusters (Intel Macs) reports `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreType {
+    Performance,
+    Efficiency,
+    Unknown,
+}
+
+/// Read each logical CPU's cluster type once from the IORegistry device tree
+/// (`IODeviceTree:/cpus/*`: the `cluster-type` CFData is `"P"`/`"E"`, keyed by
+/// the `logical-cpu-id` CFNumber that indexes `get_cpu_ticks`). The topology is
+/// static for the machine's lifetime, so callers read this once and cache it.
+/// The returned vector is indexed by logical CPU id; a core whose node lacks the
+/// property (e.g. Intel Macs, which have no P/E split) reads `Unknown`.
+pub fn get_cpu_perf_levels() -> Result<Vec<CoreType>, FfiError> {
+    let path = CString::new("IODeviceTree:/cpus").unwrap();
+    let cpus = unsafe { raw::IORegistryEntryFromPath(raw::KIO_MASTER_PORT_DEFAULT, path.as_ptr()) };
+    if cpus == 0 {
+        return Err(FfiError::SystemError {
+            function: "IORegistryEntryFromPath(IODeviceTree:/cpus)",
+            pid: 0,
+            reason: "cpus node not found".into(),
+        });
+    }
+
+    let plane = CString::new("IODeviceTree").unwrap();
+    let mut iter: u32 = 0;
+    let kr = unsafe { raw::IORegistryEntryGetChildIterator(cpus, plane.as_ptr(), &mut iter) };
+    unsafe { raw::IOObjectRelease(cpus) };
+    if kr != 0 {
+        return Err(FfiError::SystemError {
+            function: "IORegistryEntryGetChildIterator",
+            pid: 0,
+            reason: format!("kern_return_t = {}", kr),
+        });
+    }
+
+    let type_key = cfstr("cluster-type");
+    let id_key = cfstr("logical-cpu-id");
+
+    // Children can arrive out of id order, so collect (id, type) then index.
+    let mut pairs: Vec<(usize, CoreType)> = Vec::new();
+    loop {
+        let child = unsafe { raw::IOIteratorNext(iter) };
+        if child == 0 {
+            break;
+        }
+        let id = cf_prop_u64(child, id_key).map(|v| v as usize);
+        let kind = cf_prop_cluster_type(child, type_key);
+        unsafe { raw::IOObjectRelease(child) };
+        if let Some(id) = id {
+            pairs.push((id, kind));
+        }
+    }
+
+    unsafe {
+        raw::IOObjectRelease(iter);
+        cf_release(type_key);
+        cf_release(id_key);
+    }
+
+    if pairs.is_empty() {
+        return Err(FfiError::SystemError {
+            function: "IODeviceTree:/cpus",
+            pid: 0,
+            reason: "no cpu nodes carried logical-cpu-id".into(),
+        });
+    }
+    let n = pairs.iter().map(|(i, _)| *i).max().unwrap() + 1;
+    let mut out = vec![CoreType::Unknown; n];
+    for (i, k) in pairs {
+        if i < out.len() {
+            out[i] = k;
+        }
+    }
+    Ok(out)
+}
+
+/// Read a non-negative integer property off an IORegistry entry, or `None`.
+fn cf_prop_u64(entry: u32, key: raw::CfStringRef) -> Option<u64> {
+    if key.is_null() {
+        return None;
+    }
+    let val = unsafe { raw::IORegistryEntryCreateCFProperty(entry, key, std::ptr::null(), 0) };
+    if val.is_null() {
+        return None;
+    }
+    let mut out: i64 = 0;
+    let ok = unsafe {
+        raw::CFNumberGetValue(
+            val,
+            raw::KCF_NUMBER_SINT64_TYPE,
+            &mut out as *mut i64 as *mut c_void,
+        )
+    };
+    unsafe { raw::CFRelease(val) };
+    (ok != 0 && out >= 0).then_some(out as u64)
+}
+
+/// Read an IORegistry entry's `cluster-type` (a `CFData` of `"P"`/`"E"`), or
+/// `Unknown` when absent/unrecognized.
+fn cf_prop_cluster_type(entry: u32, key: raw::CfStringRef) -> CoreType {
+    if key.is_null() {
+        return CoreType::Unknown;
+    }
+    let val = unsafe { raw::IORegistryEntryCreateCFProperty(entry, key, std::ptr::null(), 0) };
+    if val.is_null() {
+        return CoreType::Unknown;
+    }
+    let len = unsafe { raw::CFDataGetLength(val) };
+    let ptr = unsafe { raw::CFDataGetBytePtr(val) };
+    let kind = if len >= 1 && !ptr.is_null() {
+        match unsafe { *ptr } {
+            b'P' => CoreType::Performance,
+            b'E' => CoreType::Efficiency,
+            _ => CoreType::Unknown,
+        }
+    } else {
+        CoreType::Unknown
+    };
+    unsafe { raw::CFRelease(val) };
+    kind
+}
+
+#[cfg(test)]
+mod perf_level_tests {
+    use super::*;
+
+    #[test]
+    fn perf_levels_cover_every_core_and_sum_to_the_logical_count() {
+        let levels = get_cpu_perf_levels().expect("read cpu perf levels");
+        let ticks = get_cpu_ticks().expect("read cpu ticks");
+        // One entry per logical CPU, aligned with the tick source's indexing.
+        assert_eq!(
+            levels.len(),
+            ticks.len(),
+            "perf-level count must match the logical CPU count"
+        );
+        // On Apple Silicon every core is P or E (no Unknown); on an Intel Mac
+        // they would all be Unknown. Either way the vector is fully populated.
+        let classified = levels
+            .iter()
+            .filter(|l| matches!(l, CoreType::Performance | CoreType::Efficiency))
+            .count();
+        assert!(
+            classified == levels.len() || classified == 0,
+            "cores should be uniformly classified or uniformly unknown, got {levels:?}"
+        );
     }
 }

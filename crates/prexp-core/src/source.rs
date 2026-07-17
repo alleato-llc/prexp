@@ -1,6 +1,6 @@
 use crate::error::PrexpError;
 use crate::models::{ProcessDetail, ProcessSnapshot};
-use crate::system::{CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
+use crate::system::{CpuKind, CpuTicks, DiskCounters, MemoryInfo, NetworkCounters};
 
 /// Platform-agnostic trait for querying processes and system metrics.
 ///
@@ -29,6 +29,16 @@ pub trait ProcessSource {
     /// Get cumulative system-wide disk byte counters (read/written). Diff two
     /// reads to get a rate.
     fn disk_counters(&self) -> Result<DiskCounters, PrexpError>;
+
+    /// Each logical CPU's cluster type (P/E), indexed to align with
+    /// [`Self::cpu_ticks`]. The topology is static, so callers read this once
+    /// and cache it. The default is unsupported; only platforms with
+    /// heterogeneous cores (macOS) override it.
+    fn cpu_perf_levels(&self) -> Result<Vec<CpuKind>, PrexpError> {
+        Err(PrexpError::Backend(
+            "cpu perf levels not available on this platform".into(),
+        ))
+    }
 
     /// Get detailed process information for the info panel.
     fn process_detail(&self, pid: i32, parent_name: &str) -> Result<ProcessDetail, PrexpError>;
