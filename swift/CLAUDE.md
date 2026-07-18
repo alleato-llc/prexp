@@ -64,11 +64,13 @@ eventual shared `spec/` oracle compares parsed structure, not bytes.
 
 ### Known gaps (tracked)
 
-- `processDetail.network` is not parsed yet (the `socket_fdinfo` proto-union address/port
-  formatting must match Rust's `resolve_socket_detail` exactly — best verified against the
-  Rust info panel, so it lands with the Network tab in the front-end milestones).
 - `networkCounters` / `diskCounters` inherit the `.unsupported` default for now (system-wide
   rate niceties; not needed by the data layer).
+
+`processDetail.network` IS parsed (TCP/UDP via `PROC_PIDFDSOCKETINFO`, mirroring Rust exactly —
+including the raw-port/no-`ntohs` quirk). Verifying it caught a latent Rust bug: `prexp-ffi`'s
+`InSockInfo` was 16 bytes short, so `tcpsi_state` read the wrong offset (every TCP conn → CLOSED);
+fixed by padding the struct to the real size. A good example of parity verification paying off.
 
 ## TUI (`swift/TUI`)
 
