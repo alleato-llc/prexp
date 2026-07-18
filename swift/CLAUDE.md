@@ -4,6 +4,10 @@
 > the cross-cutting overview and the parallel `rust/` ecosystem). It is an **independent
 > reimplementation** of prexp — there is **no FFI to the Rust core**. The native source
 > talks straight to macOS libproc/Mach via Swift's `Darwin` module.
+>
+> Shared design/parity/FFI docs: [`../docs/`](../docs/README.md) — start with
+> [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md); the native-API reference is
+> [`FFI.md`](../docs/FFI.md). User-facing usage: [`README.md`](README.md).
 
 ## Layout
 

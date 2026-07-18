@@ -4,6 +4,10 @@
 > cross-cutting overview and the parallel `swift/` ecosystem). The Cargo workspace lives in
 > this `rust/` directory — **run all `cargo` commands from here.** The Swift side is an
 > independent reimplementation; there is no FFI between them.
+>
+> Shared design/parity/FFI docs: [`../docs/`](../docs/README.md) — start with
+> [`ARCHITECTURE.md`](../docs/ARCHITECTURE.md); the native-API reference is
+> [`FFI.md`](../docs/FFI.md). User-facing usage: [`README.md`](README.md).
 
 ## Project Overview
 

@@ -7,14 +7,23 @@ shared binary between them — each side reimplements the domain natively.
 
 ```
 fdtop/
-├── rust/     Rust ecosystem — see rust/CLAUDE.md (AUTHORITATIVE for Rust work)
-├── swift/    Swift ecosystem — see swift/CLAUDE.md (AUTHORITATIVE for Swift work)  [in progress]
-├── spec/     shared behavior spec — the parity oracle both sides run  [planned]
-└── docs/     shared cross-language docs  [planned]
+├── rust/       Rust ecosystem — see rust/CLAUDE.md (AUTHORITATIVE for Rust work)
+├── swift/      Swift ecosystem — see swift/CLAUDE.md (AUTHORITATIVE for Swift work)
+├── docs/       shared design/parity/FFI docs — see docs/README.md
+└── scripts/    cross-cutting tooling — parity.py (the parity oracle)
 ```
 
 **When working inside `rust/` or `swift/`, that directory's `CLAUDE.md` is authoritative.**
 This root file only covers what spans both.
+
+## Documentation
+
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — the common design (start here).
+- **[docs/PARITY.md](docs/PARITY.md)** — the live parity check (`scripts/parity.py`).
+- **[docs/FFI.md](docs/FFI.md)** — the native macOS APIs both sides reimplement.
+- **[docs/TESTING.md](docs/TESTING.md)** · **[docs/MIGRATION.md](docs/MIGRATION.md)** ·
+  **[CONTRIBUTING.md](CONTRIBUTING.md)** · **[SECURITY.md](SECURITY.md)**
+- Ecosystem entry points: **[rust/README.md](rust/README.md)** · **[swift/README.md](swift/README.md)**.
 
 ## The two ecosystems
 
