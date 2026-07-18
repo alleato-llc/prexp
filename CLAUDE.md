@@ -33,7 +33,7 @@ Each side is layered the same way: `core → front-ends`.
   (models, `ProcessSource` trait, formatters) → `prexp` (TUI) and `prexp-desktop`
   (iced/`rime` GUI, **excluded from the workspace**, built standalone). Build/test from
   `rust/`. Full detail in `rust/CLAUDE.md`.
-- **`swift/`** — a parallel Swift port _(in progress)_: `Core` (a native `ProcessSource`
+- **`swift/`** — a parallel Swift port: `Core` (a native `ProcessSource`
   over the same libproc/Mach APIs via a small C shim + Codable models + formatters), `TUI`
   (on the sibling `tint` immediate-mode kit), and `App` (a native SwiftUI GUI). Full detail
   in `swift/CLAUDE.md`.

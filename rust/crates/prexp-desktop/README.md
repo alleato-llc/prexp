@@ -2,7 +2,7 @@
 
 A native desktop GUI for prexp — the same process/file-descriptor explorer as the
 `prexp` TUI, built on [iced](https://iced.rs) via the sibling
-[`rime`](../../../rime) component kit. It surfaces `prexp-core`'s
+[`rime`](../../../../rime) component kit. It surfaces `prexp-core`'s
 `ProcessSource` API as a windowed app: a live process table with fd counts, a
 per-process resource detail pane, a system-stats header (per-core CPU, memory,
 load, battery, CPU-history chart), a tabbed info panel, send-signal, and reverse
@@ -10,9 +10,13 @@ path lookup.
 
 ## Run
 
+`prexp-desktop` is **excluded from the Rust workspace** (heavy iced/`rime` deps), so
+run these from **this crate's directory** — `rust/crates/prexp-desktop/` — not the
+workspace root:
+
 ```bash
-cargo run -p prexp-desktop                    # 2s refresh (default)
-cargo run -p prexp-desktop -- --interval 1    # custom refresh cadence (seconds)
+cargo run                    # 2s refresh (default)
+cargo run -- --interval 1    # custom refresh cadence (seconds)
 ```
 
 `--interval <SECONDS>` sets how often the process table re-snapshots. It's a
@@ -116,7 +120,7 @@ sorting, PID-anchored selection, CPU%/system-stat deltas, and the info / signal 
 lookup flows.
 
 ```bash
-cargo test -p prexp-desktop
+cargo test          # from this crate's directory (excluded from the workspace)
 ```
 
 **Headless view snapshots** (`src/snapshot.rs`) render the real `view()` to a PNG
@@ -125,7 +129,7 @@ via `iced_test::Simulator` and byte-compare against a committed baseline under
 so a plain `cargo test` stays green:
 
 ```bash
-cargo test -p prexp-desktop -- --ignored snapshot
+cargo test -- --ignored snapshot
 ```
 
 > **Backend: wgpu, not tiny-skia.** The stats header's CPU chart is an iced
@@ -144,7 +148,7 @@ snapshots never signal a real process (the trait's default impl calls real
 ## Dependencies
 
 - `prexp-core` (path) — the domain `ProcessSource` API and models.
-- `rime` (path, `../../../rime/rime`) — the iced component kit. iced is
+- `rime` (path, `../../../../rime/rime`) — the iced component kit. iced is
   re-exported through rime; the direct `iced` dep here pins the same `0.14` line
   and enables the `tokio` feature (the async runtime behind `iced::time::every`
   and off-thread `Task`s).

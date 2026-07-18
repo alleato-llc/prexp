@@ -152,7 +152,7 @@ Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal P
 
 ## prexp-desktop (GUI)
 
-A native iced app on the sibling `rime` component kit (`rime = { path = "../../../rime/rime" }`; iced 0.14 re-exported through rime). Full details in `crates/prexp-desktop/README.md`. Conventions worth knowing:
+A native iced app on the sibling `rime` component kit (`rime = { path = "../../../../rime/rime" }`; iced 0.14 re-exported through rime). Full details in `crates/prexp-desktop/README.md`. Conventions worth knowing:
 
 - **Source behind a trait object**: `App` holds `Arc<dyn ProcessSource + Send + Sync>` (IoC — swappable for a test double, shareable into tasks). Native backend is `prexp_core::backend::NativeSource`.
 - **Heavy work off the UI thread**: `snapshot_all` + system metrics are gathered in a background `iced::Task` (`sample_task`) → `Message::Refreshed(Sample)`; `process_detail` and `find_by_path` run in their own tasks; only `kill_process` runs inline (fast syscall). A timer subscription (`iced::time::every`) drives the `--interval` cadence.
