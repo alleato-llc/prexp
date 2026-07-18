@@ -1,5 +1,3 @@
-import PrexpCore
-
 /// Process sort fields — cycled with `s` (and direction toggled with `S`),
 /// mirroring the Rust front-ends. Numeric fields default to descending (biggest
 /// first); name/pid default to ascending.

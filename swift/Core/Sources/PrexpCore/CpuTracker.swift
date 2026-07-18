@@ -1,5 +1,4 @@
 import Foundation
-import PrexpCore
 
 /// Per-process CPU% via the delta of cumulative `cpu_time_ns` between refreshes,
 /// divided by wall-clock elapsed — mirrors the Rust TUI's `stats.rs`. The first

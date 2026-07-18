@@ -9,10 +9,13 @@
 
 ```
 swift/
-├── Core/     SwiftPM package `PrexpCore` — the data layer (DONE)
+├── Core/     SwiftPM package `PrexpCore` — the data layer + shared pure logic (DONE)
 ├── TUI/      SwiftPM `prexp` executable + `PrexpTUI` lib, on sibling `tint` (DONE)
-└── App/      xcodegen SwiftUI GUI `Prexp` (planned)
+└── App/      xcodegen SwiftUI GUI `Prexp` (DONE)
 ```
+
+Shared pure logic (`Format`, `CpuTracker`/`CoreUsage`, `SortField`/`sortProcesses`/
+`matchesQuery`) lives in **`PrexpCore`** so both front-ends use one implementation.
 
 Mirrors the Rust layering: `Core` (models + `ProcessSource` + native source + formatters)
 is the analogue of `prexp-core` + `prexp-ffi`; `TUI` and `App` are the two front-ends
@@ -91,6 +94,27 @@ theme picker (`t`), column config (`c`), process-tree grouping.
 
 - **Core** — DONE (native `ProcessSource`, formatters, smoke tool, unit tests, verified parity).
 - **TUI** — DONE (see above).
-- **App** — native SwiftUI GUI via xcodegen, feature-mirroring `prexp-desktop` (live table,
-  detail pane, stats header with a Swift Charts CPU history, info tabs, signal, reverse lookup);
-  heavy work off the main actor. (planned)
+- **App** — DONE (see below).
+
+## App (`swift/App`)
+
+Native SwiftUI, macOS 14+, assembled by **xcodegen** from `project.yml` (the `.xcodeproj` is
+generated and gitignored — regenerate with `xcodegen generate`). Depends on the `PrexpCore`
+SwiftPM package. **Not sandboxed** and ad-hoc signed (`CODE_SIGN_IDENTITY "-"`) — a process
+explorer must read other processes via libproc/Mach, which the app sandbox forbids.
+
+```bash
+cd swift/App
+xcodegen generate
+xcodebuild -project Prexp.xcodeproj -scheme Prexp -configuration Debug build
+open ~/Library/Developer/Xcode/DerivedData/Prexp-*/Build/Products/Debug/Prexp.app
+```
+
+`AppState` is `@MainActor @Observable`; the heavy `ProcessSource` calls hop to detached tasks,
+a `Task`-driven timer refreshes on `interval`, and CPU%/per-core deltas + a rolling CPU-history
+buffer feed the view (same delta approach as the TUI, via the shared `PrexpCore` helpers).
+
+Delivered: live process table (PID/NAME/CPU%/MEM/PMEM/THR/FILES/FDs), sort picker + reverse,
+filter field, stats header (memory bar, per-core P/E grid, load, battery, Swift Charts CPU
+history), detail pane (open resources), send-signal (SIGTERM/INT/KILL) via a confirmation
+dialog. Deferred: info-panel tabs (Network/Environment), reverse path lookup, theme picker.
