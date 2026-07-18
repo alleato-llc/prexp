@@ -119,4 +119,6 @@ buffer feed the view (same delta approach as the TUI, via the shared `PrexpCore`
 Delivered: live process table (PID/NAME/CPU%/MEM/PMEM/THR/FILES/FDs), sort picker + reverse,
 filter field, stats header (memory bar, per-core P/E grid, load, battery, Swift Charts CPU
 history), detail pane (open resources), send-signal (SIGTERM/INT/KILL) via a confirmation
-dialog. Deferred: info-panel tabs (Network/Environment), reverse path lookup, theme picker.
+dialog, and the **info panel** — a sheet (⌘I / double-click) with Overview / Resources /
+Network / Environment tabs over `processDetail`, loaded off the main actor. Deferred: reverse
+path lookup, theme picker.

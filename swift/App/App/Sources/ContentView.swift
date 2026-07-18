@@ -20,6 +20,9 @@ struct ContentView: View {
             statusBar
         }
         .toolbar { toolbar }
+        .sheet(item: $state.info) { info in
+            InfoPanelView(state: state, info: info)
+        }
         .confirmationDialog(
             state.signalTarget.map { "Signal \($0.name) (pid \($0.pid))?" } ?? "",
             isPresented: Binding(get: { state.signalTarget != nil },
@@ -54,8 +57,11 @@ struct ContentView: View {
         }
         .contextMenu(forSelectionType: Int32.self) { pids in
             if let pid = pids.first, let p = state.rows.first(where: { $0.id == pid })?.snapshot {
+                Button("Get Info") { state.openInfo(pid) }
                 Button("Send Signal…") { state.signalTarget = p }
             }
+        } primaryAction: { pids in
+            if let pid = pids.first { state.openInfo(pid) }   // double-click → info
         }
         .tableStyle(.inset)
     }
@@ -78,6 +84,11 @@ struct ContentView: View {
                 Image(systemName: state.reversed ? "arrow.up" : "arrow.down")
             }
             .help("Reverse sort direction")
+
+            Button { state.openInfoForSelection() } label: { Image(systemName: "info.circle") }
+                .keyboardShortcut("i", modifiers: .command)
+                .disabled(state.selection == nil)
+                .help("Get info (⌘I)")
 
             Toggle(isOn: $state.showStats) { Image(systemName: "chart.bar.xaxis") }
                 .help("Show system stats")

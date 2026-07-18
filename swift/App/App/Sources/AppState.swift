@@ -41,6 +41,16 @@ final class AppState {
 
     var lastError: String?
     var signalTarget: ProcessSnapshot?   // drives the send-signal confirmation
+    var info: InfoState?                  // drives the info panel sheet
+
+    /// State for the info-panel sheet: the target plus the (async-loaded) detail.
+    struct InfoState: Identifiable {
+        let pid: Int32
+        let name: String
+        var detail: ProcessDetail?
+        var error: String?
+        var id: Int32 { pid }
+    }
 
     private var all: [ProcessSnapshot] = []
     private let cpu = CpuTracker()
@@ -126,5 +136,28 @@ final class AppState {
             lastError = "signal failed: \(error)"
         }
         signalTarget = nil
+    }
+
+    /// Open the info panel for `pid` and load its full detail off the main actor
+    /// (env parsing + network can be slow). The sheet shows a spinner until it lands.
+    func openInfo(_ pid: Int32) {
+        guard let p = all.first(where: { $0.pid == pid }) else { return }
+        let parentName = all.first { $0.pid == p.ppid }?.name ?? ""
+        info = InfoState(pid: pid, name: p.name, detail: nil, error: nil)
+        let src = source
+        Task {
+            do {
+                let d = try await Task.detached(priority: .userInitiated) {
+                    try src.processDetail(pid, parentName: parentName)
+                }.value
+                if info?.pid == pid { info?.detail = d }
+            } catch {
+                if info?.pid == pid { info?.error = "\(error)" }
+            }
+        }
+    }
+
+    func openInfoForSelection() {
+        if let pid = selection { openInfo(pid) }
     }
 }
