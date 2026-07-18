@@ -10,7 +10,7 @@
 ```
 swift/
 ├── Core/     SwiftPM package `PrexpCore` — the data layer (DONE)
-├── TUI/      SwiftPM package — terminal UI on the sibling `tint` kit (planned)
+├── TUI/      SwiftPM `prexp` executable + `PrexpTUI` lib, on sibling `tint` (DONE)
 └── App/      xcodegen SwiftUI GUI `Prexp` (planned)
 ```
 
@@ -67,13 +67,30 @@ eventual shared `spec/` oracle compares parsed structure, not bytes.
 - `networkCounters` / `diskCounters` inherit the `.unsupported` default for now (system-wide
   rate niceties; not needed by the data layer).
 
+## TUI (`swift/TUI`)
+
+Immediate-mode on `tint` (`.package(path: "../../../tint")`, product `Tint`). lib/bin split:
+`PrexpTUI` (the `AppModel` state machine + pure `View.render`) is unit-tested by rendering to an
+offscreen `Buffer` and inspecting text; `prexp` is the thin executable wiring `Application.run`.
+A background `DispatchSource` timer refreshes the (expensive) full snapshot on the `--interval`
+cadence; tint redraws the current model each frame. `AppModel` is `@unchecked Sendable` (single
+main-run-loop). Preview without a TTY: `.build/debug/prexp --snapshot 110x30 [--stats]`.
+
+Delivered: live process table (PID/NAME/CPU%/MEM/PMEM/THR/FILES/TOTAL), CPU% deltas, sort cycle
+(`s`/`S`), `/` search, detail + help overlays, stats header (per-core P/E, memory gauge, load),
+row load-coloring, PID-anchored selection.
+
+**Additions made to `tint`** (we own it): `Rect.centered(width:height:)`, a `Clear` widget, a
+`Popup` (centered modal + backdrop-clear), and a `TextInput` widget — tint shipped neither modal
+centering nor text input. All with tests under `tint/Tests/TintTests/Widget/`.
+
+Deferred TUI features (follow-ups): file view (`v`), signal picker (`K`), reverse lookup (`r`),
+theme picker (`t`), column config (`c`), process-tree grouping.
+
 ## Milestones
 
 - **Core** — DONE (native `ProcessSource`, formatters, smoke tool, unit tests, verified parity).
-- **TUI** — terminal UI on `tint` (`.package(path: "../../../tint")`, product `Tint`).
-  Immediate-mode ratatui-style: own the model, mutate in `onKey`, redraw each frame. Map the
-  process table → `Table`, header → `Layout`+`Gauge`, modals → `Overlay`; build a text-input
-  and centered-modal helper (tint ships neither). Mirror prexp's keybindings/columns/themes.
+- **TUI** — DONE (see above).
 - **App** — native SwiftUI GUI via xcodegen, feature-mirroring `prexp-desktop` (live table,
   detail pane, stats header with a Swift Charts CPU history, info tabs, signal, reverse lookup);
-  heavy work off the main actor.
+  heavy work off the main actor. (planned)
