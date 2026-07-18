@@ -37,10 +37,14 @@ Each side is layered the same way: `core → front-ends`.
 - **Keep the two in parity.** Both front-end families (TUI, GUI) exist on each side on
   purpose. A domain behavior change should land on both sides (and, once it exists, as a
   `spec/` edit first — the soroban rule).
-- **Parity oracle is deferred.** `spec/` is not built yet. fdtop's live process data is
-  non-deterministic, so a shared spec can only assert *pure* logic (formatters, sorting,
-  tree-building, CPU-delta math, filtering) over canned fixtures. It will be added once both
-  implementations exist (Rust via `cucumber`, Swift via `pickle-kit`, both reading `spec/`).
+- **Parity is checked live, not by a fixture spec.** fdtop's interesting surface is the native
+  libproc/Mach data extraction, which a canned-fixture Gherkin oracle can't reach (and where a
+  real divergence already hid — a Rust struct bug that mislabeled every TCP state). So the
+  parity guardrail is `scripts/parity.py`: it runs both implementations, joins their process
+  snapshots on PID, and checks stable fields (name/ppid/state/accessible), fd-path overlap, and
+  a sample of network tables — with thresholds and a CI exit code. Run it after any change to
+  either side's data layer. The pure logic (formatters/sort/filter) is separately unit-tested on
+  both sides. A shared Gherkin `spec/` remains possible but is low-value for this domain.
 
 ## Sibling repos (checked out next to this one)
 
