@@ -1,6 +1,13 @@
 # prexp
 
-Process explorer — a terminal UI for inspecting open file descriptors, CPU usage, and memory per process. Native macOS backend via libproc FFI, no dependency on `lsof`.
+Process explorer — inspect open file descriptors, CPU usage, and memory per process. Native macOS backend via libproc FFI, no dependency on `lsof`.
+
+This repo is a **modular monolith** with two parallel ecosystems, one per language:
+
+- **`rust/`** — the Rust workspace (this README). Ships two front-ends over one core: a terminal UI (`prexp`) and a native desktop GUI (`prexp-desktop`). See [`rust/CLAUDE.md`](rust/CLAUDE.md).
+- **`swift/`** — a parallel Swift implementation _(in progress)_: a native core over the same libproc/Mach APIs, a terminal UI on the sibling [`tint`](../tint) kit, and a native SwiftUI app.
+
+The two sides are independent reimplementations (no FFI between them), mirroring the sibling `soroban` project. Everything below concerns the Rust side; run its commands from `rust/`.
 
 ```
 ┌ Processes [/zed] ───────────────────────────────────────────────────────────────────────────────────┐
@@ -69,17 +76,23 @@ Process explorer — a terminal UI for inspecting open file descriptors, CPU usa
 
 ## Prerequisites
 
-- Rust 1.70+ (stable)
+- Rust 1.80+ (stable)
 - macOS (Linux backend is stubbed)
+- The GUI (`prexp-desktop`) renders via iced/wgpu (Metal on macOS) and depends on the sibling [`rime`](../rime) crate checked out next to this repo.
 
 ## Quickstart
 
 ```bash
+cd rust        # the Rust workspace lives here
+
 # Build
 cargo build
 
 # Run the TUI
 cargo run -p prexp
+
+# Run the desktop GUI (2s refresh; --interval <secs> to change)
+cargo run -p prexp-desktop
 
 # Run tests
 cargo test
@@ -100,21 +113,37 @@ cargo run -p prexp -- --pid 1234 --info env          # Environment variables
 
 ## Architecture
 
-prexp is a Cargo workspace with three crates:
+The Rust side (`rust/`) is a Cargo workspace with four crates — two front-ends over a shared core:
 
 ```
-prexp (binary) ──> prexp-core (library) ──> prexp-ffi (FFI)
-       └──────────────────────────────────> prexp-ffi (direct)
+prexp         (TUI) ─┐
+                     ├─> prexp-core ──> prexp-ffi   (macOS libproc / Mach FFI)
+prexp-desktop (GUI) ─┘
 ```
+
+`prexp` also depends on `prexp-ffi` directly; `prexp-desktop` also depends on the sibling `rime` UI kit.
 
 - **prexp-ffi** — Raw FFI bindings and safe Rust wrappers for macOS `libproc.h` and Mach APIs. All `unsafe` code is contained here.
 - **prexp-core** — Platform-agnostic domain models, `ProcessSource` trait, backend implementations, and output formatters (JSON, TSV).
-- **prexp** — Binary crate with CLI argument parsing (clap), TUI (ratatui + crossterm), and theming.
+- **prexp** — TUI binary: CLI argument parsing (clap), TUI (ratatui + crossterm), and theming.
+- **prexp-desktop** — GUI binary: a native iced app built on the [`rime`](../rime) component kit. See [`rust/crates/prexp-desktop/README.md`](rust/crates/prexp-desktop/README.md).
+
+Both binaries hold the backend behind `prexp-core`'s `ProcessSource` trait, so the core is shared and each front-end is a thin presentation layer. `prexp-desktop` is **excluded from the workspace** and built standalone (`cd rust/crates/prexp-desktop && cargo build`) because it pulls in the heavy iced/`rime` dependency graph — mirroring how `soroban` excludes its GUI crate.
 
 ## Project Structure
 
 ```
-crates/
+fdtop/
+├── rust/            # Rust ecosystem (workspace below)
+├── swift/           # Swift ecosystem — Core + TUI (tint) + App (in progress)
+├── spec/            # shared behavior spec (planned; parity oracle)
+└── docs/            # shared cross-language docs (planned)
+```
+
+The Rust workspace:
+
+```
+rust/crates/
 ├── prexp-ffi/                    # FFI crate (macOS)
 │   └── src/
 │       ├── raw.rs                # extern "C", #[repr(C)] structs, Mach API bindings
@@ -132,24 +161,30 @@ crates/
 │       └── output/
 │           ├── json.rs           # JSON formatter
 │           └── tsv.rs            # TSV formatter
-└── prexp/                        # Binary crate
+├── prexp/                        # TUI binary crate
+│   └── src/
+│       ├── main.rs               # Entry point
+│       ├── cli.rs                # Clap argument parsing
+│       └── tui/
+│           ├── app/
+│           │   ├── mod.rs        # App state, navigation, rebuild, overlays
+│           │   ├── sorting.rs    # Sort field cycling, direction
+│           │   ├── search.rs     # Search, reverse lookup, clipboard
+│           │   ├── stats.rs      # CPU%, system stats, memory formatting
+│           │   └── tree.rs       # Process tree builder
+│           ├── ui/
+│           │   ├── mod.rs        # Draw dispatcher, status bar
+│           │   ├── process_list.rs  # Process table
+│           │   ├── file_list.rs     # File table + detail
+│           │   └── overlays.rs      # Summary, help, theme, config, process detail
+│           ├── event.rs          # Key binding dispatch
+│           └── theme.rs          # 9 color themes
+└── prexp-desktop/                # GUI binary crate (iced + rime)
     └── src/
-        ├── main.rs               # Entry point
-        ├── cli.rs                # Clap argument parsing
-        └── tui/
-            ├── app/
-            │   ├── mod.rs        # App state, navigation, rebuild, overlays
-            │   ├── sorting.rs    # Sort field cycling, direction
-            │   ├── search.rs     # Search, reverse lookup, clipboard
-            │   ├── stats.rs      # CPU%, system stats, memory formatting
-            │   └── tree.rs       # Process tree builder
-            ├── ui/
-            │   ├── mod.rs        # Draw dispatcher, status bar
-            │   ├── process_list.rs  # Process table
-            │   ├── file_list.rs     # File table + detail
-            │   └── overlays.rs      # Summary, help, theme, config, process detail
-            ├── event.rs          # Key binding dispatch
-            └── theme.rs          # 9 color themes
+        ├── main.rs               # CLI (--interval) → run()
+        ├── lib.rs                # iced application wiring
+        ├── app/                  # state, messages, background tasks, delta metrics
+        └── view/                 # table, detail pane, stats header, modals
 ```
 
 ## TUI Usage
@@ -201,6 +236,19 @@ All configurable via `c`:
 
 Default, Nord, Dracula, Solarized, Monokai, Gruvbox, Tokyo Night, Retro, Royal Purple
 
+## GUI Usage (`prexp-desktop`)
+
+A native desktop window over the same core: a live process table with fd counts, a per-process resource detail pane, a system-stats header (per-core CPU, memory, load, battery, and a CPU-history chart), a tabbed info panel, send-signal, and reverse path lookup. Controls live in the title strip (a sort dropdown plus **Info / Signal / Find / Stats / Theme** buttons); click a row to select a process.
+
+```bash
+cargo run -p prexp-desktop                    # 2s refresh
+cargo run -p prexp-desktop -- --interval 1    # custom cadence (seconds)
+```
+
+See [`rust/crates/prexp-desktop/README.md`](rust/crates/prexp-desktop/README.md) for the full feature list, architecture, and the headless snapshot-test convention.
+
 ## Documentation
 
-See `CLAUDE.md` for architecture details, FFI specifics, and development conventions. Skills are available in `.claude/skills/` for project patterns.
+- [`rust/crates/prexp-desktop/README.md`](rust/crates/prexp-desktop/README.md) — the desktop GUI: features, architecture, testing.
+- `CLAUDE.md` — architecture details, FFI specifics, and development conventions.
+- `.claude/skills/` — reusable project patterns (structure, component design, testing, docs).

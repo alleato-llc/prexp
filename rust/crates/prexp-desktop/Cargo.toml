@@ -1,0 +1,29 @@
+[package]
+name = "prexp-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "Process explorer — desktop GUI for inspecting open file descriptors per process"
+
+[[bin]]
+name = "prexp-desktop"
+path = "src/main.rs"
+
+[lib]
+name = "prexp_desktop"
+path = "src/lib.rs"
+
+[dependencies]
+prexp-core = { path = "../prexp-core" }
+# rime is the nested library crate of the sibling `rime` workspace; iced is
+# re-exported through it, so we pin one iced by matching its 0.14 line here.
+rime = { path = "../../../../rime/rime" }
+# `tokio` pulls in the async runtime backend that powers `iced::time::every`
+# (the refresh timer) and off-thread `Task`s.
+iced = { version = "0.14", features = ["canvas", "advanced", "tokio"] }
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+# Headless view snapshots (no GPU/window) — see src/snapshot.rs. Mirrors the
+# tty project's snapshot convention (ADR 0005): force `ICED_TEST_BACKEND=tiny-skia`
+# for portable, display-free pixels.
+iced_test = "0.14"
