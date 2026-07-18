@@ -30,7 +30,8 @@ swift test                                  # pure-logic unit tests (canned data
 .build/debug/prexp-smoke json               # dump all processes as JSON
 .build/debug/prexp-smoke tsv                # TSV
 .build/debug/prexp-smoke pid <PID>          # one process
-.build/debug/prexp-smoke detail <PID>       # process detail
+.build/debug/prexp-smoke detail <PID>       # process detail (incl. network)
+.build/debug/prexp-smoke lookup <PATH>      # reverse lookup (processes holding PATH)
 .build/debug/prexp-smoke system             # system metrics summary
 ```
 
@@ -119,6 +120,7 @@ buffer feed the view (same delta approach as the TUI, via the shared `PrexpCore`
 Delivered: live process table (PID/NAME/CPU%/MEM/PMEM/THR/FILES/FDs), sort picker + reverse,
 filter field, stats header (memory bar, per-core P/E grid, load, battery, Swift Charts CPU
 history), detail pane (open resources), send-signal (SIGTERM/INT/KILL) via a confirmation
-dialog, and the **info panel** — a sheet (⌘I / double-click) with Overview / Resources /
-Network / Environment tabs over `processDetail`, loaded off the main actor. Deferred: reverse
-path lookup, theme picker.
+dialog, the **info panel** — a sheet (⌘I / double-click) with Overview / Resources / Network /
+Environment tabs over `processDetail`, loaded off the main actor — and **reverse path lookup**
+(⌘F, or right-click a resource in the detail pane → "Find processes with this path"), which
+runs `findByPath` off the main actor and lists the holders. Deferred: theme picker.

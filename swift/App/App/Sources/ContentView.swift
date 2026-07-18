@@ -13,8 +13,11 @@ struct ContentView: View {
             HSplitView {
                 processTable
                     .frame(minWidth: 520)
-                DetailPaneView(process: state.selectedProcess)
-                    .frame(minWidth: 260)
+                DetailPaneView(process: state.selectedProcess) { path in
+                    state.openLookup(prefill: path)
+                    state.runLookup()
+                }
+                .frame(minWidth: 260)
             }
             Divider()
             statusBar
@@ -22,6 +25,9 @@ struct ContentView: View {
         .toolbar { toolbar }
         .sheet(item: $state.info) { info in
             InfoPanelView(state: state, info: info)
+        }
+        .sheet(isPresented: $state.showLookup) {
+            LookupView(state: state)
         }
         .confirmationDialog(
             state.signalTarget.map { "Signal \($0.name) (pid \($0.pid))?" } ?? "",
@@ -89,6 +95,10 @@ struct ContentView: View {
                 .keyboardShortcut("i", modifiers: .command)
                 .disabled(state.selection == nil)
                 .help("Get info (⌘I)")
+
+            Button { state.openLookup() } label: { Image(systemName: "doc.text.magnifyingglass") }
+                .keyboardShortcut("f", modifiers: .command)
+                .help("Find processes by open path (⌘F)")
 
             Toggle(isOn: $state.showStats) { Image(systemName: "chart.bar.xaxis") }
                 .help("Show system stats")

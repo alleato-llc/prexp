@@ -33,6 +33,12 @@ do {
         let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .withoutEscapingSlashes]
         print(String(decoding: try enc.encode(detail), as: UTF8.self))
 
+    case "lookup":
+        guard let path = args.dropFirst().first else {
+            FileHandle.standardError.write(Data("usage: prexp-smoke lookup <PATH>\n".utf8)); exit(2)
+        }
+        print(try Formatters.json(try source.findByPath(path)))
+
     case "system":
         let mem = try source.memoryInfo()
         let ticks = try source.cpuTicks()

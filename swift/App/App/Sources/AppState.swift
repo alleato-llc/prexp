@@ -43,6 +43,13 @@ final class AppState {
     var signalTarget: ProcessSnapshot?   // drives the send-signal confirmation
     var info: InfoState?                  // drives the info panel sheet
 
+    // reverse path lookup (Find) sheet
+    var showLookup = false
+    var lookupQuery = ""
+    var lookupResults: [ProcessSnapshot] = []
+    var lookupSearching = false
+    var lookupSearched = false
+
     /// State for the info-panel sheet: the target plus the (async-loaded) detail.
     struct InfoState: Identifiable {
         let pid: Int32
@@ -159,5 +166,31 @@ final class AppState {
 
     func openInfoForSelection() {
         if let pid = selection { openInfo(pid) }
+    }
+
+    // MARK: Reverse lookup
+
+    /// Open the Find sheet, optionally prefilled with `path`.
+    func openLookup(prefill path: String? = nil) {
+        if let path { lookupQuery = path }
+        showLookup = true
+    }
+
+    /// Run `findByPath` off the main actor and populate the results.
+    func runLookup() {
+        let path = lookupQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return }
+        lookupSearching = true
+        lookupSearched = true
+        lookupResults = []
+        let src = source
+        Task {
+            let results = await Task.detached(priority: .userInitiated) {
+                (try? src.findByPath(path)) ?? []
+            }.value
+            guard showLookup else { return }
+            lookupResults = results
+            lookupSearching = false
+        }
     }
 }

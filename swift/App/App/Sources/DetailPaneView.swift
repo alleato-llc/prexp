@@ -5,6 +5,7 @@ import SwiftUI
 /// the loaded snapshot — the GUI analogue of the TUI detail overlay.
 struct DetailPaneView: View {
     let process: ProcessSnapshot?
+    var onFindPath: (String) -> Void = { _ in }
 
     var body: some View {
         if let p = process {
@@ -18,6 +19,11 @@ struct DetailPaneView: View {
                         TableColumn("FD") { Text("\($0.resource.descriptor)").monospacedDigit() }.width(44)
                         TableColumn("Kind") { Text($0.resource.kind.rawValue).foregroundStyle(color(for: $0.resource.kind)) }.width(72)
                         TableColumn("Path") { Text($0.resource.path ?? "—").textSelection(.enabled).lineLimit(1) }
+                    }
+                    .contextMenu(forSelectionType: Int.self) { idxs in
+                        if let i = idxs.first, i < p.resources.count, let path = p.resources[i].path {
+                            Button("Find processes with this path") { onFindPath(path) }
+                        }
                     }
                     .tableStyle(.inset)
                 }
