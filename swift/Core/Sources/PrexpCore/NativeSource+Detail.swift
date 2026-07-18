@@ -2,12 +2,7 @@ import Darwin
 import Foundation
 
 // Detailed process info for the info panel — mirrors `get_process_detail` in
-// prexp-ffi's process.rs.
-//
-// NOTE: `network` (per-connection tcp/udp table) is not parsed here yet. It reads
-// the `socket_fdinfo` proto union, whose exact address/port formatting must match
-// the Rust `resolve_socket_detail` byte-for-byte — best verified against the Rust
-// info panel, so it lands with the Network tab in the front-end milestones.
+// prexp-ffi's process.rs, including the per-connection network table.
 extension NativeSource {
 
     public func processDetail(_ pid: Int32, parentName: String) throws -> ProcessDetail {
@@ -57,8 +52,76 @@ extension NativeSource {
             syscallsMach: task.pti_syscalls_mach,
             syscallsUnix: task.pti_syscalls_unix,
             diskBytesRead: rd, diskBytesWritten: wr,
-            network: [],
+            network: Self.networkConnections(pid),
             environment: Self.environment(pid))
+    }
+
+    // MARK: network connections — proc_pidfdinfo(PROC_PIDFDSOCKETINFO)
+
+    /// TCP/UDP connections for a process — mirrors Rust `get_network_connections`
+    /// + `resolve_socket_detail`. Ports and addresses are formatted exactly as the
+    /// Rust side does (including that the port is used raw, without `ntohs` — a
+    /// shared quirk; a byte-swapped 443 shows as 47873. Keep the two in lockstep).
+    static func networkConnections(_ pid: Int32) -> [NetworkConnection] {
+        var out: [NetworkConnection] = []
+        for fd in listFds(pid) where Int32(bitPattern: fd.fdtype) == PROX_FDTYPE_SOCKET {
+            if let conn = socketDetail(pid: pid, fd: fd.fd) { out.append(conn) }
+        }
+        return out
+    }
+
+    static func socketDetail(pid: Int32, fd: Int32) -> NetworkConnection? {
+        var si = socket_fdinfo()
+        let sz = Int32(MemoryLayout<socket_fdinfo>.size)
+        guard proc_pidfdinfo(pid, fd, PROC_PIDFDSOCKETINFO, &si, sz) == sz else { return nil }
+
+        let family = si.psi.soi_family
+        let type = si.psi.soi_type  // SOCK_STREAM = 1 (tcp), SOCK_DGRAM = 2 (udp)
+
+        // Only AF_INET (2) / AF_INET6 (30) are parsed; others are opaque.
+        guard family == 2 || family == 30 else {
+            return NetworkConnection(proto: "sock(\(family))", localAddr: "*", remoteAddr: nil, state: nil)
+        }
+
+        // in_sockinfo lives at the start of the soi_proto union (== tcpsi_ini for TCP).
+        let ini = si.psi.soi_proto.pri_in
+        let proto = type == 1 ? "tcp" : "udp"
+        let local = formatSockAddr(ini.insi_laddr.ina_46.i46a_addr4.s_addr,
+                                   port: ini.insi_lport, vflag: ini.insi_vflag)
+        let remote = formatSockAddr(ini.insi_faddr.ina_46.i46a_addr4.s_addr,
+                                    port: ini.insi_fport, vflag: ini.insi_vflag)
+        let state = type == 1 ? tcpStateName(si.psi.soi_proto.pri_tcp.tcpsi_state) : nil
+        let remoteOpt = ini.insi_fport != 0 ? remote : nil
+        return NetworkConnection(proto: proto, localAddr: local, remoteAddr: remoteOpt, state: state)
+    }
+
+    static func formatSockAddr(_ sAddr: UInt32, port: Int32, vflag: UInt8) -> String {
+        let ip: String
+        if vflag & 0x1 != 0 {  // INI_IPV4
+            let b = withUnsafeBytes(of: sAddr) { Array($0) }
+            ip = (b[0] == 0 && b[1] == 0 && b[2] == 0 && b[3] == 0)
+                ? "*" : "\(b[0]).\(b[1]).\(b[2]).\(b[3])"
+        } else {
+            ip = "*"  // IPv6 display simplified — matches Rust
+        }
+        return port == 0 ? "\(ip):*" : "\(ip):\(port)"
+    }
+
+    static func tcpStateName(_ s: Int32) -> String {
+        switch s {
+        case 0: return "CLOSED"
+        case 1: return "LISTEN"
+        case 2: return "SYN_SENT"
+        case 3: return "SYN_RCVD"
+        case 4: return "ESTABLISHED"
+        case 5: return "CLOSE_WAIT"
+        case 6: return "FIN_WAIT_1"
+        case 7: return "CLOSING"
+        case 8: return "LAST_ACK"
+        case 9: return "FIN_WAIT_2"
+        case 10: return "TIME_WAIT"
+        default: return "UNKNOWN"
+        }
     }
 
     // MARK: cwd — proc_pidinfo(PROC_PIDVNODEPATHINFO)

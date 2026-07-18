@@ -535,7 +535,10 @@ pub struct In4In6Addr {
     pub i46a_addr4: [u8; 4], // struct in_addr = u32, but we read as bytes
 }
 
-/// Matches `struct in_sockinfo` (partial — fields we need for IP:port).
+/// Matches `struct in_sockinfo` in full. The trailing `insi_v4`/`insi_v6` fields
+/// are load-bearing: `tcp_sockinfo` embeds this struct as its first member, so if
+/// `InSockInfo` is short, `tcpsi_state` is read from the wrong offset (it comes
+/// out 0 = CLOSED for every connection). Keep this the exact size of the C struct.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct InSockInfo {
@@ -546,10 +549,15 @@ pub struct InSockInfo {
     pub insi_flow: u32,
     pub insi_vflag: u8,
     pub insi_ip_ttl: u8,
-    pub rfu_1: u16,    // padding
-    pub _rfu_pad: u16, // more padding to align to u32
+    pub rfu_1: u32,
     pub insi_faddr: In4In6Addr,
     pub insi_laddr: In4In6Addr,
+    // insi_v4 { in4_tos } + insi_v6 { in6_hlim, in6_cksum, in6_ifindex, in6_hops }
+    pub insi_v4_tos: u8,
+    pub insi_v6_hlim: u8,
+    pub insi_v6_cksum: i32,
+    pub insi_v6_ifindex: u16,
+    pub insi_v6_hops: i16,
 }
 
 /// Matches `struct tcp_sockinfo` (partial).
