@@ -1,0 +1,7 @@
+[workspace]
+members = ["crates/*"]
+# prexp-desktop (iced + the external sibling `rime` crate) is built standalone,
+# never as part of the shared workspace graph — mirrors soroban's excluded GUI
+# crate. Build/test it from its own directory: `cd crates/prexp-desktop && cargo test`.
+exclude = ["crates/prexp-desktop"]
+resolver = "2"

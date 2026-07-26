@@ -1,0 +1,44 @@
+name: Prexp
+options:
+  bundleIdPrefix: dev.javierlvelasquez
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+packages:
+  PrexpCore:
+    path: ../Core
+
+targets:
+  Prexp:
+    type: application
+    platform: macOS
+    sources:
+      - App/Sources
+    dependencies:
+      - package: PrexpCore
+        product: PrexpCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.javierlvelasquez.prexp
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        # No app sandbox: a process explorer must read other processes via
+        # libproc/Mach, which the sandbox forbids. Ad-hoc signed for local dev.
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: false
+
+schemes:
+  Prexp:
+    build:
+      targets:
+        Prexp: all
+    run:
+      config: Debug
+    archive:
+      config: Release

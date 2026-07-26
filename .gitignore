@@ -1,1 +1,9 @@
-/target
+# Rust/Cargo build output (workspace at rust/, plus the standalone prexp-desktop
+# crate and any Swift SwiftPM builds) — match `target` anywhere, not just root.
+target/
+
+# Swift / Xcode
+.build/
+.swiftpm/
+*.xcodeproj
+DerivedData/
